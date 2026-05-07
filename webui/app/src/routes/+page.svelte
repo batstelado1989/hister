@@ -127,6 +127,8 @@
   let deleteConfirmSkip = $state(false);
 
   let showDeleteAllConfirm = $state(false);
+  let deleteError: string | null = $state(null);
+  let deleteErrorTimer: any = null;
 
   let recentSearches: string[] = $state([]);
   let rulesCount = $state(0);
@@ -394,14 +396,32 @@
     if (query) sendQuery(query);
   }
 
+  function setDeleteError(msg: string) {
+    deleteError = msg;
+    if (deleteErrorTimer) clearTimeout(deleteErrorTimer);
+    deleteErrorTimer = setTimeout(() => {
+      deleteError = null;
+    }, 6000);
+  }
+
   async function deleteResult(url: string) {
-    await apiFetch('/delete', {
+    const res = await apiFetch('/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: 'url:"' + url.replaceAll('"', '\\"') + '"',
       }),
     });
+    if (!res.ok) {
+      const text = await res.text();
+      setDeleteError(text || 'Delete failed.');
+      return;
+    }
+    const data = await res.json();
+    if (!data.deleted) {
+      setDeleteError('Document not found in index. Run "hister reindex" to fix stale entries.');
+      return;
+    }
     accumulatedDocs = accumulatedDocs.filter((d) => d.url !== url);
     if (lastResults) {
       lastResults = { ...lastResults, documents: accumulatedDocs };
@@ -440,11 +460,23 @@
 
   async function deleteAllResults() {
     const q = query + (getUserId() !== undefined ? ' user_id:' + getUserId() : '');
-    await apiFetch('/delete', {
+    const res = await apiFetch('/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: q }),
     });
+    if (!res.ok) {
+      const text = await res.text();
+      setDeleteError(text || 'Delete all failed.');
+      return;
+    }
+    const data = await res.json();
+    if (!data.deleted) {
+      setDeleteError(
+        'No matching documents found in index. Run "hister reindex" if results appear stale.',
+      );
+      return;
+    }
     accumulatedDocs = [];
     if (lastResults) {
       lastResults = { ...lastResults, documents: [], total: 0 };
@@ -1162,6 +1194,18 @@
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <ScrollArea class="min-h-0 flex-1">
         <div class="w-full max-w-[70em] space-y-3 overflow-x-hidden px-3 py-2 md:px-12">
+          {#if deleteError}
+            <div
+              class="border-hister-rose bg-hister-rose/10 text-hister-rose flex items-center justify-between gap-2 border-[2px] px-3 py-2 text-sm"
+            >
+              <span class="font-inter">{deleteError}</span>
+              <button
+                class="shrink-0 cursor-pointer opacity-60 hover:opacity-100"
+                onclick={() => (deleteError = null)}
+                aria-label="Dismiss">✕</button
+              >
+            </div>
+          {/if}
           {#if hasResults}
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="font-outfit text-hister-indigo text-sm font-bold md:text-base">
