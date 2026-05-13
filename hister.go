@@ -1094,6 +1094,11 @@ func init() {
 }
 
 func initialize() {
+	if ll := os.Getenv("HISTER__APP__LOG_LEVEL"); ll != "debug" {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
 	initConfig()
 	if cfg.Crawler.UserAgent != "" {
 		UserAgent = cfg.Crawler.UserAgent
