@@ -637,11 +637,74 @@ func (i *indexer) AddDocument(d *document.Document) error {
 }
 
 func (i *indexer) save(d *document.Document) error {
+	oldHTMLKey, oldFaviconKey := i.getDocKeysByID(d.ID())
 	if err := i.prepareForStorage(d); err != nil {
 		return err
 	}
 	log.Debug().Str("URL", d.URL).Msg("item added to index")
-	return i.getOrCreate(d.Language).Index(d.ID(), d)
+	if err := i.getOrCreate(d.Language).Index(d.ID(), d); err != nil {
+		return err
+	}
+	// After the index entry is updated, remove data files whose keys are no
+	// longer referenced by any document.
+	if oldHTMLKey != "" && oldHTMLKey != d.HTMLKey {
+		if i.countKeyRefs("html_key", oldHTMLKey) == 0 {
+			i.removeDataFile(htmlSubdir, oldHTMLKey)
+		}
+	}
+	if oldFaviconKey != "" && oldFaviconKey != d.FaviconKey {
+		if i.countKeyRefs("favicon_key", oldFaviconKey) == 0 {
+			i.removeDataFile(faviconSubdir, oldFaviconKey)
+		}
+	}
+	return nil
+}
+
+// getDocKeysByID fetches only the html_key and favicon_key fields for the
+// document with the given Bleve document ID without loading the data files.
+func (i *indexer) getDocKeysByID(id string) (htmlKey, faviconKey string) {
+	q := bleve.NewDocIDQuery([]string{id})
+	req := bleve.NewSearchRequest(q)
+	req.Fields = []string{"html_key", "favicon_key"}
+	res, err := i.idx.Search(req)
+	if err != nil || len(res.Hits) < 1 {
+		return "", ""
+	}
+	h := res.Hits[0]
+	if k, ok := h.Fields["html_key"].(string); ok {
+		htmlKey = k
+	}
+	if k, ok := h.Fields["favicon_key"].(string); ok {
+		faviconKey = k
+	}
+	return
+}
+
+// countKeyRefs returns the number of indexed documents that reference the
+// given key in the specified field (html_key or favicon_key).
+// Returns 1 on search error as a safe default to avoid accidental deletion.
+func (i *indexer) countKeyRefs(field, key string) uint64 {
+	q := bleve.NewTermQuery(key)
+	q.SetField(field)
+	req := bleve.NewSearchRequest(q)
+	req.Fields = []string{key}
+	req.Size = 1 // TODO test if we can set this to 0 - we are only interested in res.Total
+	res, err := i.idx.Search(req)
+	if err != nil {
+		return 1
+	}
+	return res.Total
+}
+
+// removeDataFile deletes the data file identified by subdir and key,
+// logging a warning if the removal fails.
+func (i *indexer) removeDataFile(subdir, key string) {
+	path := dataFilePath(i.dataDir, subdir, key)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Warn().Err(err).Str("key", key).Str("subdir", subdir).Msg("failed to remove orphaned data file")
+	} else {
+		log.Debug().Str("key", key).Str("subdir", subdir).Msg("removed orphaned data file on document update")
+	}
 }
 
 // prepareForStorage writes HTML and favicon to the data dir (if not already done)
@@ -1295,9 +1358,9 @@ func createMapping(lang string) mapping.IndexMapping {
 	docMapping.AddFieldMappingsAt("domain", um)
 	docMapping.AddFieldMappingsAt("language", um)
 	docMapping.AddFieldMappingsAt("favicon", noIdxMap)
-	docMapping.AddFieldMappingsAt("favicon_key", noIdxMap)
+	docMapping.AddFieldMappingsAt("favicon_key", um)
 	docMapping.AddFieldMappingsAt("html", noIdxMap)
-	docMapping.AddFieldMappingsAt("html_key", noIdxMap)
+	docMapping.AddFieldMappingsAt("html_key", um)
 	docMapping.AddFieldMappingsAt("metadata", noIdxMap)
 	docMapping.AddFieldMappingsAt("added", bleve.NewNumericFieldMapping())
 	docMapping.AddFieldMappingsAt("type", bleve.NewNumericFieldMapping())
