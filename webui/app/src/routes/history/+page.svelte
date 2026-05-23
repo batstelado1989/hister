@@ -17,7 +17,7 @@
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { PageHeader } from '@hister/components';
   import { StatusMessage, PreviewPanel } from '$lib/components';
-  import { Search, Clock, RotateCw, Trash2, Eye } from '@lucide/svelte';
+  import { Search, Clock, Trash2, Eye } from '@lucide/svelte';
 
   let items: HistoryItem[] = $state([]);
   let loading = $state(true);
@@ -233,6 +233,9 @@
   function scrollToGroup(key: string) {
     activeGroup = key;
     filterByDate = key;
+    if (sentinel) {
+      getScrollParent(sentinel.parentElement)?.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }
 
   function showAll() {
@@ -291,6 +294,45 @@
       loadItems(pageKey);
     }
   }
+
+  const hasMore = $derived((!openedOnly && pageKey !== '') || (openedOnly && openedLastID > 0));
+
+  // Allow autoscroll only when no date filter is active, or when there are no
+  // items from dates earlier than the selected date loaded yet.
+  const canAutoLoad = $derived(
+    !filterByDate || !items.some((item) => item.added && getDateKey(item.added) < filterByDate),
+  );
+
+  let sentinel: HTMLDivElement | undefined = $state();
+  let sentinelVisible = $state(false);
+
+  function getScrollParent(el: HTMLElement | null): HTMLElement | null {
+    while (el && el !== document.documentElement) {
+      const style = getComputedStyle(el);
+      if (/auto|scroll/.test(style.overflow + style.overflowY + style.overflowX)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  $effect(() => {
+    if (!sentinel) return;
+    const root = getScrollParent(sentinel.parentElement);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        sentinelVisible = entries[0].isIntersecting;
+      },
+      { root, threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    if (sentinelVisible && !loading && hasMore && untrack(() => canAutoLoad)) {
+      loadMore();
+    }
+  });
 
   async function deleteItem(item: HistoryItem) {
     try {
@@ -441,21 +483,10 @@
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full w-20 border-0 bg-transparent p-0 text-xs font-medium shadow-none focus-visible:ring-0 md:w-40"
       />
     </div>
-    {#if (items.length > 0 && !openedOnly) || (openedOnly && openedLastID > 0)}
-      <Button
-        variant="outline"
-        size="sm"
-        class="hover:bg-hister-cyan/30 font-inter brutal-press h-8 shrink-0 gap-1.5 border-[3px] text-xs font-semibold"
-        onclick={loadMore}
-      >
-        <RotateCw class="size-3.5" />
-        <span class="hidden md:inline">Load more</span>
-      </Button>
-    {/if}
   </nav>
 </header>
 
-{#if loading}
+{#if loading && items.length === 0}
   <StatusMessage message="Loading history..." type="loading" />
 {:else if error}
   <StatusMessage message={error} type="error" class="mx-3 mt-4 md:mx-6" />
@@ -651,6 +682,12 @@
               </div>
             {/each}
           </div>
+          {#if loading && items.length > 0}
+            <div class="flex justify-center py-4">
+              <span class="font-inter text-text-brand-muted animate-pulse text-xs">Loading...</span>
+            </div>
+          {/if}
+          <div bind:this={sentinel} class="h-px w-full"></div>
         </ScrollArea>
       {/if}
 
