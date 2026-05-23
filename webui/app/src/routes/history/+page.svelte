@@ -510,7 +510,7 @@
 
         <Button
           variant="ghost"
-          class="flex h-auto w-full items-center justify-start gap-2 rounded-none px-2.5 py-1.5 cursor-pointer {!filterByDate
+          class="flex h-auto w-full cursor-pointer items-center justify-start gap-2 rounded-none px-2.5 py-1.5 {!filterByDate
             ? 'bg-hister-indigo text-white hover:bg-(--hister-indigo)/90 hover:text-white'
             : 'hover:bg-muted-surface'}"
           onclick={showAll}
@@ -538,7 +538,7 @@
           {@const isActive = filterByDate === group.key}
           <Button
             variant="ghost"
-            class="flex h-auto w-full items-center justify-start gap-2 rounded-none px-2.5 py-1.5 cursor-pointer {isActive
+            class="flex h-auto w-full cursor-pointer items-center justify-start gap-2 rounded-none px-2.5 py-1.5 {isActive
               ? 'text-white hover:text-white'
               : 'hover:bg-muted-surface'}"
             style={isActive ? `background-color: ${getColorVar(color)};` : ''}
