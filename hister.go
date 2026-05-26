@@ -289,16 +289,17 @@ var importCmd = &cobra.Command{
 Import browsing history from a supported browser.
 
 Usage:
-  import-browser auto-detect                       - auto-detect all installed browsers
-  import-browser browser BROWSER_TYPE DB_PATH      - auto-discover the database for the given browser, unless the path DB_PATH is specified
-  import-browser file DB_PATH                      - use database path and auto-detect browser type
+  import-browser                        - auto-detect all installed browsers
+  import-browser BROWSER_TYPE 			- auto-detect database path
+  import-browser DB_PATH				- auto-detect browser type
+  import-browser BROWSER_TYPE DB_PATH   - import a browser type with a specific database path
 
 Supported for browser types for auto-detecting: firefox, chrome, chromium, brave, edge, vivaldi, opera, zen, waterfox, Ladybird
 
 The Firefox URL database is usually located at ~/.mozilla/firefox/*.default/places.sqlite
 The Chrome/Chromium URL database is usually located at ~/.config/chromium/Default/History
 `,
-	Args: cobra.RangeArgs(1, 3),
+	Args: cobra.RangeArgs(0, 2),
 	Run:  importHistory,
 }
 
@@ -1456,8 +1457,8 @@ func importHistory(cmd *cobra.Command, args []string) {
 	cfg.Crawler.UserAgent = UserAgent
 	applyCrawlerBackendFlags(cmd)
 
-	switch args[0] {
-	case "auto-detect":
+	switch len(args) {
+	case 0:
 		// Auto-detect all installed browsers.
 		dbs := getDBPaths()
 		if len(dbs) == 0 {
@@ -1469,48 +1470,25 @@ func importHistory(cmd *cobra.Command, args []string) {
 			}
 		}
 
-	case "browser":
-		// Browser name given; auto-discover its database or with specified database.
-		browser := strings.ToLower(args[1])
-		var found bool
-		if len(args) == 3 {
+	case 1, 2:
+		if len(args) == 1 {
+			// check if args[0] is a file or not and call the correct function
+			if _, err := os.Stat(args[0]); os.IsNotExist(err) {
+				importBrowser(strings.ToLower(args[0]), cmd)
+			} else {
+				importHistoryFile(args[0], cmd)
+			}
+		} else {
+			browser := args[0]
 			table_name := browserTableName(browser)
+			println(browser)
+			println(table_name)
 			if table_name == "" {
 				log.Warn().Msg(fmt.Sprintf("Unknown browser, couldn't auto detect table name using %s as table name", browser))
 				table_name = browser
 			}
-			db_path := args[2]
-			importDB(db_path, table_name, cmd)
-		} else {
-			for _, db := range getDBPaths() {
-				if strings.HasPrefix(strings.ToLower(db.name), browser) {
-					found = true
-					for _, path := range db.paths {
-						importDB(path, db.table_name, cmd)
-					}
-				}
-			}
-			if !found {
-				log.Fatal().Str("browser", args[1]).Msg("no database found for browser")
-			}
+			importDB(args[1], table_name, cmd)
 		}
-
-	case "file":
-		// Auto-detect browser given the database file
-		DBfile := args[1]
-		var table string
-
-		if strings.HasSuffix(DBfile, "places.sqlite") {
-			table = "moz_places"
-		} else if strings.HasSuffix(DBfile, "History") {
-			table = "urls"
-		} else if strings.HasSuffix(DBfile, "History.db") {
-			table = "History"
-		} else {
-			log.Fatal().Str("file", DBfile).Msg("Couldn't auto detect table")
-		}
-
-		importDB(args[1], table, cmd)
 
 	default:
 		log.Fatal().Msg(cmd.Long)
@@ -1522,6 +1500,38 @@ func importHistory(cmd *cobra.Command, args []string) {
 	//	vf = "last_visit_date"
 	//}
 	//q += fmt.Sprintf(" AND %s >= datetime('now', 'localtime', '-1 month')", vf)
+}
+
+func importBrowser(browser string, cmd *cobra.Command) {
+	var found bool
+
+	for _, db := range getDBPaths() {
+		if strings.HasPrefix(strings.ToLower(db.name), browser) {
+			found = true
+			for _, path := range db.paths {
+				importDB(path, db.table_name, cmd)
+			}
+		}
+	}
+	if !found {
+		log.Fatal().Str("browser", browser).Msg("no database found for browser")
+	}
+}
+
+func importHistoryFile(file_path string, cmd *cobra.Command) {
+	var table string
+
+	if strings.HasSuffix(file_path, "places.sqlite") {
+		table = "moz_places"
+	} else if strings.HasSuffix(file_path, "History") {
+		table = "urls"
+	} else if strings.HasSuffix(file_path, "History.db") {
+		table = "History"
+	} else {
+		log.Fatal().Str("file", file_path).Msg("Couldn't auto detect table")
+	}
+
+	importDB(file_path, table, cmd)
 }
 
 func importDB(dbFile string, table string, cmd *cobra.Command) {
@@ -1941,7 +1951,7 @@ func browserTableName(browser string) string {
 		return "moz_places"
 	case "chrome", "chromium", "brave", "edge", "vivaldi", "opera":
 		return "urls"
-	case "Ladybird":
+	case "ladybird":
 		return "History"
 	}
 	return ""
