@@ -5,7 +5,8 @@
   import { formatTimestamp, formatMetaDate } from '$lib/search';
   import { ScrollArea } from '@hister/components/ui/scroll-area';
   import { Button } from '@hister/components/ui/button';
-  import { Eye, X, Maximize2, Minimize2, History } from '@lucide/svelte';
+  import * as DropdownMenu from '@hister/components/ui/dropdown-menu';
+  import { Eye, X, Maximize2, Minimize2, History, MoreVertical } from '@lucide/svelte';
 
   interface Props {
     url: string;
@@ -34,6 +35,9 @@
   let versionCount = $state(0);
   let versions = $state<DocumentVersion[]>([]);
   let showVersions = $state(false);
+  let extractorName = $state('');
+  let defaultExtractor = $state('');
+  let availableExtractors = $state<{ name: string; description: string }[]>([]);
 
   function parseTemplateData(c: string): any | null {
     try {
@@ -63,11 +67,11 @@
 
   $effect(() => {
     if (url) {
-      loadContent(url, hintTitle);
+      loadContent(url, hintTitle, extractorName);
     }
   });
 
-  async function loadContent(u: string, hint: string) {
+  async function loadContent(u: string, hint: string, extractor: string = '') {
     loading = true;
     content = '';
     template = '';
@@ -79,7 +83,8 @@
     versions = [];
     versionCount = 0;
     try {
-      const resp = await apiFetch(`/preview?url=${encodeURIComponent(u)}`);
+      const extractorParam = extractor ? `&extractor=${encodeURIComponent(extractor)}` : '';
+      const resp = await apiFetch(`/preview?url=${encodeURIComponent(u)}${extractorParam}`);
       if (!resp.ok) {
         content = `<p class="text-hister-rose">Failed to load readable content. Status: ${resp.status}</p>`;
       } else {
@@ -91,6 +96,10 @@
         template = data.template || '';
         templateData = template === 'video' ? parseTemplateData(data.content) : null;
         content = template === 'video' ? '' : data.content || '<p>No content available</p>';
+        if (data.extractors?.length) {
+          availableExtractors = data.extractors;
+          defaultExtractor = data.extractors[0].name;
+        }
       }
     } catch (err) {
       content = `<p class="text-hister-rose">Failed to load: ${err}</p>`;
@@ -200,6 +209,46 @@
         {/if}
       </div>
       <div class="mt-1 flex shrink-0 items-center gap-1">
+        {#if availableExtractors.length}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  variant="ghost"
+                  size="icon-sm"
+                  class="text-text-brand-muted hover:text-text-brand shrink-0 cursor-pointer"
+                  title="Change extractor"
+                >
+                  <MoreVertical class="size-4" />
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content
+              class="border-brutal-border bg-card-surface w-44 rounded-none border-[3px] p-3 shadow-[4px_4px_0_var(--brutal-shadow)]"
+            >
+              <div class="space-y-2">
+                <p
+                  class="font-outfit text-text-brand-muted mb-1 text-xs font-bold tracking-widest uppercase"
+                >
+                  Extractor
+                </p>
+                <DropdownMenu.RadioGroup
+                  value={extractorName || defaultExtractor}
+                  onValueChange={(v) => {
+                    extractorName = v;
+                  }}
+                >
+                  {#each availableExtractors as ext, i (ext.name)}
+                    <DropdownMenu.RadioItem value={ext.name}
+                      >{ext.name}{i === 0 ? ' (default)' : ''}</DropdownMenu.RadioItem
+                    >
+                  {/each}
+                </DropdownMenu.RadioGroup>
+              </div>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        {/if}
         {#if onfullscreentoggle}
           <Button
             variant="ghost"

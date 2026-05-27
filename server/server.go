@@ -1218,10 +1218,11 @@ func servePreview(c *webContext) {
 		}
 	}
 	payload := map[string]any{
-		"title":    doc.Title,
-		"content":  resp.Content,
-		"template": resp.Template,
-		"added":    doc.Added,
+		"title":      doc.Title,
+		"content":    resp.Content,
+		"template":   resp.Template,
+		"added":      doc.Added,
+		"extractors": extractor.ListMatching(doc),
 	}
 	if versionCount, err := model.CountDocumentVersions(u, c.UserID); err == nil && versionCount > 0 {
 		payload["version_count"] = versionCount

@@ -74,6 +74,43 @@ type ExtractorInfo struct {
 	Options     map[string]any `json:"options,omitempty"`
 }
 
+// ListMatching returns an ExtractorInfo entry for every enabled extractor that
+// matches d, in chain order. Options is omitted so the result is safe to send
+// to clients.
+func ListMatching(d *document.Document) []ExtractorInfo {
+	infos := make([]ExtractorInfo, 0)
+	for _, e := range extractors {
+		if !e.GetConfig().Enable {
+			continue
+		}
+		if e.Match(d) {
+			infos = append(infos, ExtractorInfo{
+				Name:        e.Name(),
+				Description: e.Description(),
+				Enabled:     true,
+			})
+		}
+	}
+	return infos
+}
+
+// ListEnabled returns an ExtractorInfo entry for every enabled extractor in
+// chain order. Options is omitted so the result is safe to send to clients.
+func ListEnabled() []ExtractorInfo {
+	infos := make([]ExtractorInfo, 0, len(extractors))
+	for _, e := range extractors {
+		if !e.GetConfig().Enable {
+			continue
+		}
+		infos = append(infos, ExtractorInfo{
+			Name:        e.Name(),
+			Description: e.Description(),
+			Enabled:     true,
+		})
+	}
+	return infos
+}
+
 // List returns an ExtractorInfo entry for every registered extractor in chain
 // order. Options is always populated; callers that should not expose
 // configuration must clear or omit it before sending to clients.
