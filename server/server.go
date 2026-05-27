@@ -1195,6 +1195,7 @@ func serveGet(c *webContext) {
 func servePreview(c *webContext) {
 	// TODO apply previous version diffs to display earlier versions of the page.
 	u := c.Request.URL.Query().Get("url")
+	extractorName := c.Request.URL.Query().Get("extractor")
 	doc := indexer.GetByURLAndUser(u, c.UserID)
 	if doc == nil {
 		serve500(c)
@@ -1205,8 +1206,12 @@ func servePreview(c *webContext) {
 	if doc.HTML == "" {
 		resp = types.PreviewResponse{Content: doc.Text}
 	} else {
-		resp, err = extractor.Preview(doc)
+		resp, err = extractor.Preview(doc, extractorName)
 		if err != nil {
+			if errors.Is(err, extractor.ErrNoExtractor) {
+				http.Error(c.Response, err.Error(), http.StatusBadRequest)
+				return
+			}
 			log.Warn().Err(err).Str("url", u).Msg("failed to generate preview")
 			serve500(c)
 			return

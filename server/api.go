@@ -312,6 +312,7 @@ func init() {
 			Description:  "Render a readable preview of a stored document",
 			Args: []*EndpointArg{
 				{Name: "url", Type: "string", Required: true, Description: "URL of the document to preview"},
+				{Name: "extractor", Type: "string", Required: false, Description: "Name of the extractor to use (case-insensitive); omit to use the default chain"},
 			},
 		},
 		{

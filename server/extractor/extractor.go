@@ -152,9 +152,26 @@ func Extract(d *document.Document) error {
 	return ErrNoExtractor
 }
 
-// Preview returns a rendered preview of the document using the first matching
-// extractor. Returns ErrNoExtractor if none match.
-func Preview(d *document.Document) (types.PreviewResponse, error) {
+// Preview returns a rendered preview of the document. When name is empty the
+// first matching enabled extractor in the chain is used. When name is
+// non-empty the extractor with that name (case-insensitive) is used directly,
+// bypassing Match() and the enabled check. ErrNoExtractor is returned when
+// name is non-empty but not found.
+func Preview(d *document.Document, name string) (types.PreviewResponse, error) {
+	if name != "" {
+		lower := strings.ToLower(name)
+		for _, e := range extractors {
+			if strings.ToLower(e.Name()) == lower {
+				log.Debug().Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Creating preview with explicit extractor")
+				resp, state, err := e.Preview(d)
+				if state == types.ExtractorAbort {
+					return types.PreviewResponse{}, fmt.Errorf("extractor %s: %w", e.Name(), err)
+				}
+				return resp, nil
+			}
+		}
+		return types.PreviewResponse{}, fmt.Errorf("%w: %s", ErrNoExtractor, name)
+	}
 	for _, e := range extractors {
 		if !e.GetConfig().Enable {
 			continue
