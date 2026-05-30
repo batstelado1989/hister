@@ -359,86 +359,83 @@ func Reindex(basePath string, rules *config.Rules, skipSensitiveChecks bool, det
 			tmpIdx.embedder = embedder
 		}
 	}
+	abortReindex := func(err error) error {
+		tmpIdx.Close()
+		if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
+			log.Warn().Err(rerr).Msg("failed to clean up temp index path")
+		}
+		return err
+	}
 	q := query.NewMatchAllQuery()
 	total := idx.Total()
 	batchSize := 50
-	page := 0
-	var sortKey []string
-	req := bleve.NewSearchRequest(q)
-	req.Fields = allFields
-	req.Size = batchSize
-	req.SortBy([]string{"_id"})
-
-	for {
-		if len(sortKey) > 0 {
-			req.SetSearchAfter(sortKey)
-		}
-		res, err := idx.idx.Search(req)
-		if err != nil || len(res.Hits) < 1 {
-			break
-		}
-		n := len(res.Hits)
-		b := newMultiBatch(tmpIdx)
-		for _, h := range res.Hits {
-			d := idx.resFromHit(h, true, true)
-			if d.Type == types.Local {
-				pu, err := url.Parse(d.URL)
-				if err == nil {
-					if _, err := os.Stat(pu.Path); errors.Is(err, os.ErrNotExist) {
-						log.Warn().Str("URL", d.URL).Msg("Skipping document, file not found")
+	processed := 0
+	for subIdxName, subIdx := range idx.indexers {
+		log.Info().Str("sub-index", subIdxName).Msg("Reindexing sub-index")
+		var sortKey []string
+		req := bleve.NewSearchRequest(q)
+		req.Fields = allFields
+		req.Size = batchSize
+		req.SortBy([]string{"_id"})
+		for {
+			if len(sortKey) > 0 {
+				req.SetSearchAfter(sortKey)
+			}
+			res, err := subIdx.Search(req)
+			if err != nil || len(res.Hits) < 1 {
+				break
+			}
+			n := len(res.Hits)
+			b := newMultiBatch(tmpIdx)
+			for _, h := range res.Hits {
+				d := idx.resFromHit(h, true, true)
+				if d.Type == types.Local {
+					pu, err := url.Parse(d.URL)
+					if err == nil {
+						if _, err := os.Stat(pu.Path); errors.Is(err, os.ErrNotExist) {
+							log.Warn().Str("URL", d.URL).Msg("Skipping document, file not found")
+							continue
+						}
+						if files.FindMatchingDir(dirs, pu.Path) == nil {
+							log.Warn().Str("URL", d.URL).Msg("Skipping document, directory no longer configured")
+							continue
+						}
+					}
+				}
+				log.Debug().Str("URL", d.URL).Msg("Indexing")
+				d.SetSkipSensitiveCheck(skipSensitiveChecks)
+				origDate := d.Added
+				if err := d.Process(tmpIdx.langDetector, extractor.Extract); err != nil {
+					if errors.Is(err, document.ErrSensitiveContent) {
+						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
 						continue
-					}
-					if files.FindMatchingDir(dirs, pu.Path) == nil {
-						log.Warn().Str("URL", d.URL).Msg("Skipping document, directory no longer configured")
+					} else if errors.Is(err, extractor.ErrNoExtractor) {
+						log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't extract content")
 						continue
+					} else if errors.Is(err, document.ErrReadFile) {
+						log.Warn().Err(err).Str("Path", d.URL).Msg("Skipping document, can't read file")
+						continue
+					} else {
+						return abortReindex(err)
 					}
 				}
-			}
-			log.Debug().Str("URL", d.URL).Msg("Indexing")
-			d.SetSkipSensitiveCheck(skipSensitiveChecks)
-			origDate := d.Added
-			if err := d.Process(tmpIdx.langDetector, extractor.Extract); err != nil {
-				if errors.Is(err, document.ErrSensitiveContent) {
-					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, sensitive content")
+				if rules.IsSkip(d.URL) {
+					log.Info().Str("URL", d.URL).Msg("Dropping URL that has since been added to skip rules.")
 					continue
-				} else if errors.Is(err, extractor.ErrNoExtractor) {
-					log.Warn().Err(err).Str("URL", d.URL).Msg("Skipping document, can't extract content")
-					continue
-				} else if errors.Is(err, document.ErrReadFile) {
-					log.Warn().Err(err).Str("Path", d.URL).Msg("Skipping document, can't read file")
-					continue
-				} else {
-					tmpIdx.Close()
-					if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
-						log.Warn().Err(rerr).Msg("failed to clean up temp index path")
-					}
-					return err
+				}
+				d.Added = origDate
+				if err := b.Add(d); err != nil {
+					return abortReindex(err)
 				}
 			}
-			if rules.IsSkip(d.URL) {
-				log.Info().Str("URL", d.URL).Msg("Dropping URL that has since been added to skip rules.")
-				continue
+			if err := b.Save(); err != nil {
+				return abortReindex(err)
 			}
-			d.Added = origDate
-			if err := b.Add(d); err != nil {
-				tmpIdx.Close()
-				if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
-					log.Warn().Err(rerr).Msg("failed to clean up temp index path")
-				}
-				return err
-			}
+			runtime.GC()
+			processed += n
+			sortKey = res.Hits[n-1].Sort
+			log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", processed, total))
 		}
-		if err := b.Save(); err != nil {
-			tmpIdx.Close()
-			if rerr := os.RemoveAll(tmpBasePath); rerr != nil {
-				log.Warn().Err(rerr).Msg("failed to clean up temp index path")
-			}
-			return err
-		}
-		runtime.GC()
-		page += 1
-		sortKey = res.Hits[n-1].Sort
-		log.Info().Msg(fmt.Sprintf("Reindexed [%d/%d]", page*batchSize, total))
 	}
 	idx.vectorStore = nil // prevent Close() from closing the store we're still using
 	idx.Close()
