@@ -668,19 +668,13 @@ func serveConfig(c *webContext) {
 	})
 }
 
-func serveSearch(c *webContext) {
-	origin := c.Request.Header.Get("Origin")
-	if !c.Config.IsSameHost(origin) {
-		serve500(c)
-		log.Info().Str("Origin", origin).Msg("Invalid origin")
-		return
-	}
-	urlParams := c.Request.URL.Query()
+// parseSearchQueryParams parses URL query parameters into an indexer.Query.
+func parseSearchQueryParams(r *http.Request) (*indexer.Query, error) {
+	urlParams := r.URL.Query()
 	query := &indexer.Query{}
 	if rawQuery := urlParams.Get("query"); rawQuery != "" {
 		if err := json.Unmarshal([]byte(rawQuery), query); err != nil {
-			c.Response.WriteHeader(http.StatusBadRequest)
-			return
+			return nil, err
 		}
 	}
 	if q := urlParams.Get("q"); q != "" {
@@ -698,42 +692,47 @@ func serveSearch(c *webContext) {
 			}
 		}
 	}
-	if query.Text != "" {
-		if urlParams.Get("include_html") == "1" {
-			query.IncludeHTML = true
+	if urlParams.Get("include_html") == "1" {
+		query.IncludeHTML = true
+	}
+	if pk := urlParams.Get("page_key"); pk != "" {
+		query.PageKey = pk
+	}
+	if s := urlParams.Get("sort"); s != "" {
+		query.Sort = s
+	}
+	if v := urlParams.Get("semantic"); v != "" {
+		query.SemanticEnabled = v == "1" || v == "true"
+	}
+	if v := urlParams.Get("semantic_threshold"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			query.SemanticThreshold = f
 		}
-		if pk := c.Request.URL.Query().Get("page_key"); pk != "" {
-			query.PageKey = pk
-		}
-		if s := c.Request.URL.Query().Get("sort"); s != "" {
-			query.Sort = s
-		}
+	}
+	return query, nil
+}
 
-		if v := c.Request.URL.Query().Get("semantic"); v != "" {
-			query.SemanticEnabled = v == "1" || v == "true"
-		}
-		if v := c.Request.URL.Query().Get("semantic_threshold"); v != "" {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				query.SemanticThreshold = f
-			}
-		}
-		r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
-		if err != nil {
-			fmt.Println(err)
-			serve500(c)
-			return
-		}
-		jr, err := json.Marshal(r)
-		if err != nil {
-			serve500(c)
-			return
-		}
-		c.Response.Header().Add("Content-Type", "application/json")
-		if _, err := c.Response.Write(jr); err != nil {
-			log.Warn().Err(err).Msg("failed to write search response")
-		}
+// serveSearchHTTP executes a single search and writes a JSON response.
+func serveSearchHTTP(c *webContext, query *indexer.Query) {
+	r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
+	if err != nil {
+		log.Error().Err(err).Msg("search error")
+		serve500(c)
 		return
 	}
+	jr, err := json.Marshal(r)
+	if err != nil {
+		serve500(c)
+		return
+	}
+	c.Response.Header().Add("Content-Type", "application/json")
+	if _, err := c.Response.Write(jr); err != nil {
+		log.Warn().Err(err).Msg("failed to write search response")
+	}
+}
+
+// serveSearchWebSocket upgrades the connection and serves searches over WebSocket.
+func serveSearchWebSocket(c *webContext) {
 	conn, err := ws.Upgrade(c.Response, c.Request, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to upgrade websocket request")
@@ -745,7 +744,7 @@ func serveSearch(c *webContext) {
 		}
 	}()
 	for {
-		_, q, err := conn.ReadMessage()
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Error().Err(err).Msg("failed to read websocket message")
@@ -753,8 +752,7 @@ func serveSearch(c *webContext) {
 			break
 		}
 		var query *indexer.Query
-		err = json.Unmarshal(q, &query)
-		if err != nil {
+		if err = json.Unmarshal(msg, &query); err != nil {
 			log.Error().Err(err).Msg("failed to parse query")
 			continue
 		}
@@ -771,12 +769,32 @@ func serveSearch(c *webContext) {
 		jr, err := json.Marshal(res)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to marshal indexer results")
+			continue
 		}
 		if err := conn.WriteMessage(websocket.TextMessage, jr); err != nil {
 			log.Error().Err(err).Msg("failed to write websocket message")
 			break
 		}
 	}
+}
+
+func serveSearch(c *webContext) {
+	origin := c.Request.Header.Get("Origin")
+	if !c.Config.IsSameHost(origin) {
+		serve500(c)
+		log.Info().Str("Origin", origin).Msg("Invalid origin")
+		return
+	}
+	query, err := parseSearchQueryParams(c.Request)
+	if err != nil {
+		c.Response.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if query.Text != "" {
+		serveSearchHTTP(c, query)
+		return
+	}
+	serveSearchWebSocket(c)
 }
 
 func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, userID uint) (*indexer.Results, error) {
