@@ -77,6 +77,17 @@ type browserDB struct {
 	paths      []string
 }
 
+type importHistoryMultipleChoicePrompt struct {
+	prefix string
+	choice string
+	urls   int
+}
+
+type DBToImport struct {
+	table    string
+	database string
+}
+
 var (
 	cfgFile   string
 	cfg       *config.Config
@@ -1768,7 +1779,13 @@ func importHistory(cmd *cobra.Command, args []string) {
 		}
 		for _, db := range dbs {
 			for _, path := range db.paths {
-				importDB(path, db.table_name, cmd)
+				importDB([]DBToImport{
+					{
+						table:    db.table_name,
+						database: path,
+					},
+				},
+					cmd)
 			}
 		}
 
@@ -1789,7 +1806,13 @@ func importHistory(cmd *cobra.Command, args []string) {
 				log.Warn().Msg(fmt.Sprintf("Unknown browser, couldn't auto detect table name using %s as table name", browser))
 				table_name = browser
 			}
-			importDB(args[1], table_name, cmd)
+			importDB([]DBToImport{
+				{
+					table:    table_name,
+					database: args[1],
+				},
+			},
+				cmd)
 		}
 
 	default:
@@ -1811,7 +1834,13 @@ func importBrowser(browser string, cmd *cobra.Command) {
 		if strings.HasPrefix(strings.ToLower(db.name), browser) {
 			found = true
 			for _, path := range db.paths {
-				importDB(path, db.table_name, cmd)
+				importDB([]DBToImport{
+					{
+						table:    db.table_name,
+						database: path,
+					},
+				},
+					cmd)
 			}
 		}
 	}
@@ -1833,115 +1862,126 @@ func importHistoryFile(file_path string, cmd *cobra.Command) {
 		log.Fatal().Str("file", file_path).Msg("Couldn't auto detect table")
 	}
 
-	importDB(file_path, table, cmd)
+	importDB([]DBToImport{
+		{
+			table:    table,
+			database: file_path,
+		},
+	},
+		cmd)
 }
 
-func importDB(dbFile string, table string, cmd *cobra.Command) {
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", dbFile))
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to open database")
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Warn().Err(err).Msg("failed to close database")
-		}
-	}()
+func importDB(databases []DBToImport, cmd *cobra.Command) {
+	for _, database := range databases {
+		dbFile := database.database
+		table := database.table
 
-	// Fetch skip rules from the server.
-	c := newClient()
-	resp, err := c.FetchRules()
-	if err != nil {
-		log.Error().Err(err).Msg("Unable to obtain skip rules from server; using local ones instead")
-	} else {
-		// TODO: let the user know that their local rules are being overwritten?
-		cfg.Rules.Skip.ReStrs = resp.Skip
-		if err := cfg.Rules.Skip.Compile(); err != nil {
-			log.Error().Err(err).Msg("Unable to compile skip rules from server")
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?immutable=1&mode=ro", dbFile))
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to open database")
+		}
+		defer func() {
+			if err := db.Close(); err != nil {
+				log.Warn().Err(err).Msg("failed to close database")
+			}
+		}()
+
+		// Fetch skip rules from the server.
+		c := newClient()
+		resp, err := c.FetchRules()
+		if err != nil {
+			log.Error().Err(err).Msg("Unable to obtain skip rules from server; using local ones instead")
+		} else {
+			// TODO: let the user know that their local rules are being overwritten?
+			cfg.Rules.Skip.ReStrs = resp.Skip
+			if err := cfg.Rules.Skip.Compile(); err != nil {
+				log.Error().Err(err).Msg("Unable to compile skip rules from server")
+				return
+			}
+		}
+
+		q := fmt.Sprintf("SELECT DISTINCT count(url) FROM %s WHERE url LIKE 'http://%%' OR url LIKE 'https://%%'", table)
+		if i, err := cmd.Flags().GetInt("min-visit"); err == nil && i > 1 {
+			q += fmt.Sprintf(" AND visit_count >= %d", i)
+		}
+		// TODO: apply skip rules to get a more precise count?
+		row := db.QueryRow(q)
+		var count int
+		if err := row.Scan(&count); err != nil {
+			log.Debug().Str("query", q).Msg("count query")
+			log.Error().Err(err).Msg("Failed to execute counting query")
 			return
 		}
-	}
 
-	q := fmt.Sprintf("SELECT DISTINCT count(url) FROM %s WHERE url LIKE 'http://%%' OR url LIKE 'https://%%'", table)
-	if i, err := cmd.Flags().GetInt("min-visit"); err == nil && i > 1 {
-		q += fmt.Sprintf(" AND visit_count >= %d", i)
-	}
-	// TODO: apply skip rules to get a more precise count?
-	row := db.QueryRow(q)
-	var count int
-	if err := row.Scan(&count); err != nil {
-		log.Debug().Str("query", q).Msg("count query")
-		log.Error().Err(err).Msg("Failed to execute counting query")
-		return
-	}
-
-	if count < 1 {
-		exit(1, "No URLs found to import")
-	}
-
-	if !yesNoPrompt(fmt.Sprintf("%d URLs found. Start import form "+dbFile, count), true) {
-		return
-	}
-
-	q = strings.Replace(q, "count(url)", "url", 1)
-	q += " ORDER BY visit_count DESC"
-
-	fmt.Println(cliBoldStyle.Render("IMPORTING"))
-
-	// Create the crawler once so it is reused across all URLs.
-	cfg.Crawler.UserAgent = UserAgent
-	cr, crErr := crawler.New(&cfg.Crawler, nil)
-	if crErr != nil {
-		log.Fatal().Err(crErr).Msg("Failed to create crawler")
-	}
-	defer func() {
-		if err := cr.Close(); err != nil {
-			log.Warn().Err(err).Msg("crawler close error")
+		if count < 1 {
+			exit(1, "No URLs found to import")
 		}
-	}()
 
-	rows, err := db.Query(q, "url")
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to execute database query")
-		return
-	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			log.Warn().Err(err).Msg("failed to close database rows")
-		}
-	}()
-	i := 0
-	skipped := 0
-	for rows.Next() {
-		i += 1
-		var u string
-		err = rows.Scan(&u)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to scan database row")
+		if !yesNoPrompt(fmt.Sprintf("%d URLs found. Start import form "+dbFile, count), true) {
 			return
 		}
-		// skip URLs only in single user environments
-		if !cfg.App.UserHandling && cfg.Rules.IsSkip(u) {
-			log.Debug().Str("URL", u).Msg("skip importing URL by rule")
-			continue
-		}
-		exists, err := c.DocumentExists(u)
-		if err != nil {
-			log.Warn().Err(err).Str("URL", u).Msg("Failed to get info about URL, skipping")
-			skipped += 1
-			continue
-		}
-		if exists {
-			// skip already added URLs
-			continue
-		}
-		fmt.Printf("[%d/%d] %s\n", i, count, u)
-		if err := indexURL(cr, u, ""); err != nil {
-			log.Warn().Err(err).Str("url", u).Msg("Failed to index URL")
-		}
-	}
 
-	if skipped != 0 {
-		log.Info().Msgf("Skipped %d URLs", skipped)
+		q = strings.Replace(q, "count(url)", "url", 1)
+		q += " ORDER BY visit_count DESC"
+
+		fmt.Println(cliBoldStyle.Render("IMPORTING"))
+
+		// Create the crawler once so it is reused across all URLs.
+		cfg.Crawler.UserAgent = UserAgent
+		cr, crErr := crawler.New(&cfg.Crawler, nil)
+		if crErr != nil {
+			log.Fatal().Err(crErr).Msg("Failed to create crawler")
+		}
+		defer func() {
+			if err := cr.Close(); err != nil {
+				log.Warn().Err(err).Msg("crawler close error")
+			}
+		}()
+
+		rows, err := db.Query(q, "url")
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to execute database query")
+			return
+		}
+		defer func() {
+			if err := rows.Close(); err != nil {
+				log.Warn().Err(err).Msg("failed to close database rows")
+			}
+		}()
+		i := 0
+		skipped := 0
+		for rows.Next() {
+			i += 1
+			var u string
+			err = rows.Scan(&u)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to scan database row")
+				return
+			}
+			// skip URLs only in single user environments
+			if !cfg.App.UserHandling && cfg.Rules.IsSkip(u) {
+				log.Debug().Str("URL", u).Msg("skip importing URL by rule")
+				continue
+			}
+			exists, err := c.DocumentExists(u)
+			if err != nil {
+				log.Warn().Err(err).Str("URL", u).Msg("Failed to get info about URL, skipping")
+				skipped += 1
+				continue
+			}
+			if exists {
+				// skip already added URLs
+				continue
+			}
+			fmt.Printf("[%d/%d] %s\n", i, count, u)
+			if err := indexURL(cr, u, ""); err != nil {
+				log.Warn().Err(err).Str("url", u).Msg("Failed to index URL")
+			}
+		}
+
+		if skipped != 0 {
+			log.Info().Msgf("Skipped %d URLs", skipped)
+		}
 	}
 }
 
@@ -2257,4 +2297,8 @@ func browserTableName(browser string) string {
 		return "History"
 	}
 	return ""
+}
+
+func multipleChoiceImport(prefix []string, choices []string, description string, numofurls []string) []DBToImport {
+
 }
