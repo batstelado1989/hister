@@ -532,6 +532,13 @@
       activeTypeFilters.size +
       (activeDateBucket ? 1 : 0),
   );
+
+  function showFacetCategory(name: string, activeFilters: Set<string>) {
+    return (currentFacets?.terms?.[name]?.terms?.length ?? 0) > 1 || activeFilters.size > 0;
+  }
+  const showDomainsFacet = $derived(showFacetCategory('domains', activeDomainFilters));
+  const showLanguagesFacet = $derived(showFacetCategory('languages', activeLanguageFilters));
+  const showTypesFacet = $derived(showFacetCategory('types', activeTypeFilters));
   const showFiltersButton = $derived(hasResults || activeFilterCount > 0);
 
   function toggleQueryToken(prefix: string, value: string) {
@@ -1626,7 +1633,7 @@
                           {#if facetsLoading}
                             <p class="font-inter text-text-brand-muted text-xs">Loading filters…</p>
                           {:else}
-                            {#if currentFacets?.terms?.['domains']?.terms?.length}
+                            {#if showDomainsFacet}
                               <div class="space-y-1.5">
                                 <p
                                   class="font-inter text-text-brand-muted flex items-center gap-1.5 text-xs font-semibold"
@@ -1635,7 +1642,7 @@
                                   Domains
                                 </p>
                                 <div class="flex flex-wrap gap-1">
-                                  {#each currentFacets.terms['domains'].terms as { term, count } (term)}
+                                  {#each currentFacets?.terms?.['domains']?.terms ?? [] as { term, count } (term)}
                                     <button
                                       class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeDomainFilters.has(
                                         term,
@@ -1649,7 +1656,7 @@
                                     </button>
                                   {/each}
                                 </div>
-                                {#if currentFacets.terms['domains'].other}
+                                {#if currentFacets?.terms?.['domains']?.other}
                                   <button
                                     class="font-inter text-text-brand-muted hover:text-hister-indigo mt-1 cursor-pointer text-xs underline-offset-2 hover:underline"
                                     onclick={() => loadMoreFacet('domains')}>Load more</button
@@ -1657,8 +1664,8 @@
                                 {/if}
                               </div>
                             {/if}
-                            {#if currentFacets?.terms?.['languages']?.terms?.length}
-                              {#if currentFacets?.terms?.['domains']?.terms?.length}
+                            {#if showLanguagesFacet}
+                              {#if showDomainsFacet}
                                 <Separator class="bg-border-brand-muted" />
                               {/if}
                               <div class="space-y-1.5">
@@ -1669,7 +1676,7 @@
                                   Languages
                                 </p>
                                 <div class="flex flex-wrap gap-1">
-                                  {#each currentFacets.terms['languages'].terms as { term, count } (term)}
+                                  {#each currentFacets?.terms?.['languages']?.terms ?? [] as { term, count } (term)}
                                     <button
                                       class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeLanguageFilters.has(
                                         term,
@@ -1683,7 +1690,7 @@
                                     </button>
                                   {/each}
                                 </div>
-                                {#if currentFacets.terms['languages'].other}
+                                {#if currentFacets?.terms?.['languages']?.other}
                                   <button
                                     class="font-inter text-text-brand-muted hover:text-hister-indigo mt-1 cursor-pointer text-xs underline-offset-2 hover:underline"
                                     onclick={() => loadMoreFacet('languages')}>Load more</button
@@ -1691,8 +1698,8 @@
                                 {/if}
                               </div>
                             {/if}
-                            {#if currentFacets?.terms?.['types']?.terms?.length}
-                              {#if currentFacets?.terms?.['domains']?.terms?.length || currentFacets?.terms?.['languages']?.terms?.length}
+                            {#if showTypesFacet}
+                              {#if showDomainsFacet || showLanguagesFacet}
                                 <Separator class="bg-border-brand-muted" />
                               {/if}
                               <div class="space-y-1.5">
@@ -1703,7 +1710,7 @@
                                   Type
                                 </p>
                                 <div class="flex flex-wrap gap-1">
-                                  {#each currentFacets.terms['types'].terms as { term, count } (term)}
+                                  {#each currentFacets?.terms?.['types']?.terms ?? [] as { term, count } (term)}
                                     <button
                                       class="font-inter cursor-pointer rounded-none border-[2px] px-2 py-0.5 text-xs transition-colors {activeTypeFilters.has(
                                         term,
