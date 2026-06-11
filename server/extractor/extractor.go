@@ -67,6 +67,9 @@ type Extractor interface {
 // ErrNoExtractor is returned when no extractor can handle the document.
 var ErrNoExtractor = errors.New("no extractor found")
 
+// ErrExtractorAbort is returned when an extractor signals ExtractorAbort.
+var ErrExtractorAbort = errors.New("extractor aborted")
+
 // ExtractorInfo holds a summary of an extractor's identity and current state.
 type ExtractorInfo struct {
 	Name        string         `json:"name"`
@@ -180,7 +183,7 @@ func Extract(d *document.Document) error {
 			case types.ExtractorStop:
 				return nil
 			case types.ExtractorAbort:
-				return fmt.Errorf("extractor %s: %w", e.Name(), err)
+				return fmt.Errorf("extractor %s: %w: %w", e.Name(), ErrExtractorAbort, err)
 			default:
 				if err != nil {
 					log.Warn().Err(err).Str("URL", d.URL).Str("Extractor", e.Name()).Msg("Failed to extract content")
