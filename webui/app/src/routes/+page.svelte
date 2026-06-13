@@ -1476,7 +1476,7 @@
 {#if isSearching}
   <div class="flex min-h-0 flex-1 flex-col">
     <div
-      class="search bg-card-surface border-brutal-border flex h-10 shrink-0 items-center gap-3 border-b-[3px] px-4 md:h-14"
+      class="search bg-page-bg border-brutal-border flex h-10 shrink-0 items-center gap-3 border-b-[3px] px-4 md:h-14"
     >
       <Search class="text-text-brand-muted size-4 md:size-6" />
       <Input
