@@ -30,13 +30,15 @@ type HistoryLink struct {
 	LinkID    uint     `gorm:"uniqueIndex:historylinkuidx"`
 	Link      *Link    `json:"link"`
 	Count     uint     `gorm:"type:uint" json:"count"`
+	Pinned    bool     `gorm:"default:false" json:"pinned"`
 }
 
 type URLCount struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
-	Text  string `gorm:"-" json:"text,omitempty"`
-	Count uint   `json:"count"`
+	URL    string `json:"url"`
+	Title  string `json:"title"`
+	Text   string `gorm:"-" json:"text,omitempty"`
+	Count  uint   `json:"count"`
+	Pinned bool   `json:"pinned"`
 }
 
 type HistoryItem struct {
@@ -99,6 +101,39 @@ func DeleteHistoryItem(userID uint, query, url string) error {
 	).Error
 }
 
+func SetHistoryPinned(userID uint, query, url, title string, pinned bool) error {
+	if query == "" || url == "" {
+		return errors.New("missing data")
+	}
+	if !pinned {
+		return DB.Model(&HistoryLink{}).
+			Where("id in (?)",
+				DB.Table("history_links").
+					Select("history_links.id").
+					Joins("JOIN histories ON history_links.history_id = histories.id").
+					Joins("JOIN links ON history_links.link_id = links.id").
+					Where("histories.user_id = ? AND histories.query = ? AND links.url = ?", userID, query, url),
+			).Update("pinned", false).Error
+	}
+	l := GetOrCreateLink(url, title)
+	h := GetOrCreateHistory(userID, query)
+	if l == nil || h == nil {
+		return errors.New("failed to get link or query")
+	}
+	var hu *HistoryLink
+	if err := DB.Model(&HistoryLink{}).Where("history_id = ? AND link_id = ?", h.ID, l.ID).First(&hu).Error; err != nil {
+		hu = &HistoryLink{
+			HistoryID: h.ID,
+			LinkID:    l.ID,
+			Count:     1,
+			Pinned:    true,
+		}
+		return DB.Create(hu).Error
+	}
+	hu.Pinned = true
+	return DB.Save(hu).Error
+}
+
 func UpdateHistory(userID uint, query, url, title string) error {
 	if query == "" || url == "" || title == "" {
 		return errors.New("missing data")
@@ -123,12 +158,12 @@ func UpdateHistory(userID uint, query, url, title string) error {
 
 func GetURLsByQuery(userID uint, q string) ([]*URLCount, error) {
 	var us []*URLCount
-	err := DB.Select("links.url as url, links.title as title, history_links.count as count").
+	err := DB.Select("links.url as url, links.title as title, history_links.count as count, history_links.pinned as pinned").
 		Table("history_links").
 		Joins("JOIN links ON history_links.link_id = links.id").
 		Joins("JOIN histories ON history_links.history_id = histories.id").
 		Where("histories.user_id = ? AND histories.query = ?", userID, q).
-		Order("history_links.count DESC, history_links.updated_at DESC").
+		Order("history_links.pinned DESC, history_links.count DESC, history_links.updated_at DESC").
 		Limit(20).Find(&us).Error
 	return us, err
 }

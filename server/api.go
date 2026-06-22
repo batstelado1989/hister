@@ -597,6 +597,12 @@ func init() {
 					Required:    false,
 					Description: "When true, removes the matching history entry instead of adding one",
 				},
+				{
+					Name:        "pin",
+					Type:        "bool",
+					Required:    false,
+					Description: "When set, pins (true) or unpins (false) the entry as a priority result; unpinning keeps it in the visited history",
+				},
 			},
 		},
 		{

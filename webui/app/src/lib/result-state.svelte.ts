@@ -50,9 +50,9 @@ export class ResultState {
       await apiFetch('/history', {
         method: 'POST',
         headers: { 'Content-type': 'application/json; charset=UTF-8' },
-        body: JSON.stringify({ url, title: cleanTitle, query: q, delete: remove }),
+        body: JSON.stringify({ url, title: cleanTitle, query: q, pin: !remove }),
       });
-      this.actionsMessage = `Priority result ${remove ? 'deleted' : 'added'}.`;
+      this.actionsMessage = `Priority result ${remove ? 'removed' : 'added'}.`;
       this.actionsError = false;
     } catch {
       this.actionsMessage = 'Failed to update priority.';

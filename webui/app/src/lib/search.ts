@@ -30,6 +30,7 @@ export interface SearchResult {
   favicon?: string;
   added?: number;
   label?: string;
+  pinned?: boolean;
 }
 
 export interface SemanticHit {

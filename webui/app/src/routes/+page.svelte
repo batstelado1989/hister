@@ -406,7 +406,7 @@
   const totalResults = $derived(historyLen + docsLen);
   const hasResults = $derived(totalResults > 0);
   const displayResults = $derived<DisplayResult[]>([
-    ...(lastResults?.history ?? []).map((r): DisplayResult => ({ ...r, isPinned: true })),
+    ...(lastResults?.history ?? []).map((r): DisplayResult => ({ ...r, isPinned: r.pinned ?? false })),
     ...mergedResults.map((r): DisplayResult => ({ ...r, isPinned: false })),
   ]);
 

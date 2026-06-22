@@ -8,7 +8,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var migrationFunctions = []func() error{}
+var migrationFunctions = []func() error{
+	// v1: introduce HistoryLink.Pinned. Existing history links were all surfaced
+	// as pinned priority results, so preserve that appearance by marking them as
+	// pinned. Newly recorded (visited but not pinned) links default to false.
+	func() error {
+		if err := DB.AutoMigrate(&HistoryLink{}); err != nil {
+			return err
+		}
+		return DB.Model(&HistoryLink{}).Where("pinned = ?", false).Update("pinned", true).Error
+	},
+}
 
 func migrate() error {
 	var dbVer int64

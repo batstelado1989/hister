@@ -56,6 +56,7 @@ type historyItem struct {
 	Title  string `json:"title"`
 	Query  string `json:"query"`
 	Delete bool   `json:"delete"`
+	Pin    *bool  `json:"pin"`
 }
 
 type loggingResponseWriter struct {
@@ -1227,6 +1228,13 @@ func serveSaveHistory(c *webContext) {
 	}
 	if h.Delete {
 		if err := model.DeleteHistoryItem(c.UserID, h.Query, h.URL); err != nil {
+			serve500(c)
+		}
+		return
+	}
+	if h.Pin != nil {
+		if err := model.SetHistoryPinned(c.UserID, strings.TrimSpace(h.Query), strings.TrimSpace(h.URL), strings.TrimSpace(h.Title), *h.Pin); err != nil {
+			log.Error().Err(err).Msg("failed to update pin state")
 			serve500(c)
 		}
 		return
