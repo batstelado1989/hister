@@ -1154,12 +1154,21 @@ server-side from the stored HTML.
 The input file may be a plain JSON file or a 7z-compressed archive (.7z)
 containing a single JSON file.
 
+A single HTML file (.html or .htm) can also be imported: its URL is
+extracted from the HTML (canonical link, OpenGraph/Twitter meta tags, etc.)
+and the document is submitted to the running server for processing.
+
 Use --start-date and --end-date (format: YYYY-MM-DD) to only import
 documents whose "added" timestamp falls within the given date range.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		inputFile := args[0]
 		skip, _ := cmd.Flags().GetBool("skip-existing")
+
+		if ext := strings.ToLower(filepath.Ext(inputFile)); ext == ".html" || ext == ".htm" {
+			importHTMLFile(inputFile, skip)
+			return
+		}
 
 		var startDate, endDate int64 = 0, 0
 		if v, _ := cmd.Flags().GetString("start-date"); v != "" {
@@ -1282,6 +1291,39 @@ documents whose "added" timestamp falls within the given date range.`,
 		}
 		fmt.Println(msg)
 	},
+}
+
+// importHTMLFile reads a single HTML file, builds a document from it by
+// extracting the URL from the HTML, and submits it to the running server.
+func importHTMLFile(inputFile string, skip bool) {
+	data, err := os.ReadFile(inputFile)
+	if err != nil {
+		exit(1, "Failed to read HTML file: "+err.Error())
+	}
+
+	d, err := document.FromHTML(string(data))
+	if err != nil {
+		exit(1, "Failed to import HTML file: "+err.Error())
+	}
+
+	c := newClient(client.WithTimeout(0))
+
+	if skip {
+		exists, err := c.DocumentExists(d.URL)
+		if err != nil {
+			exit(1, "Failed to check if document exists: "+err.Error())
+		}
+		if exists {
+			fmt.Printf("%s Document already exists, skipping: %s\n", cliSuccessStyle.Render("✓"), d.URL)
+			return
+		}
+	}
+
+	if err := c.AddDocumentJSON(d); err != nil {
+		exit(1, "Failed to add document: "+err.Error())
+	}
+
+	fmt.Printf("%s Imported %s\n", cliSuccessStyle.Render("✓"), d.URL)
 }
 
 var reindexCmd = &cobra.Command{
