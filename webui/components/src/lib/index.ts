@@ -80,6 +80,7 @@ export {
   TableRow,
 } from './components/ui/table';
 export { Textarea } from './components/ui/textarea';
+export { Toaster, toast } from './components/ui/sonner';
 export { PageHeader } from './components/page-header';
 export { BrowserFrame } from './components/browser-frame';
 export { FeatureCard } from './components/feature-card';

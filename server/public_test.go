@@ -32,6 +32,11 @@ func newTokenTestServer(t *testing.T, public bool) (*config.Config, http.Handler
 		t.Fatal(err)
 	}
 	sessionStore = sessions.NewCookieStore([]byte(strings.Repeat("x", 32)))
+	sessionStore.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 365,
+		HttpOnly: true,
+	}
 	return cfg, registerEndpoints(cfg)
 }
 
@@ -140,6 +145,47 @@ func TestPublicModeAllowsAuthenticatedProtectedRoutes(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/add status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestTokenLoginSetsHttpOnlySessionCookieAndAuthenticates(t *testing.T) {
+	_, handler := newPublicTokenTestServer(t)
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/token-login", strings.NewReader(`{"token":"secret"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.Header.Set("Origin", "hister://")
+	loginRec := httptest.NewRecorder()
+
+	handler.ServeHTTP(loginRec, loginReq)
+
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/token-login status = %d, want %d; body=%s", loginRec.Code, http.StatusOK, loginRec.Body.String())
+	}
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("POST /api/token-login did not set a cookie")
+	}
+	var sessionCookie *http.Cookie
+	for _, cookie := range cookies {
+		if cookie.Name == storeName {
+			sessionCookie = cookie
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatalf("POST /api/token-login did not set %q cookie", storeName)
+	}
+	if !sessionCookie.HttpOnly {
+		t.Fatal("session cookie HttpOnly = false, want true")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/add", nil)
+	req.AddCookie(sessionCookie)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/add with session cookie status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 

@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { Button } from '@hister/components/ui/button';
   import { Input } from '@hister/components/ui/input';
   import * as Card from '@hister/components/ui/card';
   import { Lock } from '@lucide/svelte';
-  import { login, resetConfig } from '$lib/api';
+  import { toast } from '@hister/components/ui/sonner';
+  import { login, loginWithToken, resetConfig } from '$lib/api';
+  import { setFlashMessage, showFlashMessage } from '$lib/flash';
   import { base } from '$app/paths';
 
   let authMode = $state<'token' | 'user' | 'none'>('token');
@@ -16,9 +19,14 @@
   let oauthOnly = $state(false);
   let basePath = $state('');
 
-  // Detect auth mode from config endpoint (no credentials required)
-  $effect(() => {
-    fetch('api/config', { credentials: 'include' })
+  onMount(() => {
+    void initializeAuthPage();
+  });
+
+  async function initializeAuthPage() {
+    const flashShown = await showFlashMessage();
+
+    fetch(`${base}/api/config`, { credentials: 'include' })
       .then((r) => r.json())
       .then((cfg) => {
         authMode = cfg.authMode ?? 'token';
@@ -30,11 +38,32 @@
         }
       })
       .catch(() => {});
-  });
 
-  function handleTokenSave() {
-    localStorage.setItem('access-token', token);
-    window.location.href = base + '/';
+    if (flashShown) return;
+    const params = new URLSearchParams(window.location.search);
+    switch (params.get('reason')) {
+      case 'invalid_token':
+        toast.error('Your password was invalid or expired. Please enter it again.');
+        break;
+      case 'auth_required':
+        toast.info('Please sign in to continue.');
+    }
+  }
+
+  async function handleTokenSave() {
+    error = '';
+    loading = true;
+    try {
+      await loginWithToken(token.trim());
+      resetConfig();
+      setFlashMessage('Signed in successfully.');
+      window.location.href = base + '/';
+    } catch {
+      error = 'Invalid password';
+      toast.error(error);
+    } finally {
+      loading = false;
+    }
   }
 
   async function handleLogin() {
@@ -43,9 +72,11 @@
     try {
       await login(username, password);
       resetConfig();
+      setFlashMessage('Signed in successfully.');
       window.location.href = base + '/';
     } catch {
       error = 'Invalid username or password';
+      toast.error(error);
     } finally {
       loading = false;
     }
@@ -55,7 +86,7 @@
     if (e.key === 'Enter') {
       if (authMode === 'user') {
         handleLogin();
-      } else {
+      } else if (token.trim() && !loading) {
         handleTokenSave();
       }
     }
@@ -99,7 +130,7 @@
           {#if authMode === 'user'}
             Please sign in.
           {:else}
-            Please enter your access token.
+            Please enter your password.
           {/if}
         </Card.Description>
       </Card.Header>
@@ -180,7 +211,7 @@
               for="token"
               class="font-space text-text-brand text-sm font-semibold tracking-wider uppercase"
             >
-              Token
+              Password
             </label>
             <Input
               id="token"
@@ -188,29 +219,20 @@
               variant="brutal"
               bind:value={token}
               onkeydown={handleKeydown}
-              placeholder="Enter your token"
+              placeholder="Enter your password"
               class="focus-visible:border-hister-indigo font-mono"
               autofocus
             />
           </div>
           <Button
             onclick={handleTokenSave}
-            disabled={!token.trim()}
+            disabled={!token.trim() || loading}
             class="bg-hister-indigo hover:bg-hister-indigo/90 border-brutal-border font-space h-12 w-full rounded-none border-[3px] font-bold tracking-wider uppercase shadow-[4px_4px_0px_var(--brutal-shadow)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_var(--brutal-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save Token
+            {loading ? 'Signing in…' : 'Sign In'}
           </Button>
         {/if}
       </Card.Content>
-      <Card.Footer class="bg-muted-surface/50">
-        <p class="text-text-brand-muted font-inter w-full text-center text-xs">
-          {#if oauthOnly || authMode === 'user'}
-            Your session will be stored as a secure cookie.
-          {:else}
-            Your token will be stored locally and used for API requests.
-          {/if}
-        </p>
-      </Card.Footer>
     </Card.Root>
   </div>
 </div>

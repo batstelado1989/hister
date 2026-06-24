@@ -611,6 +611,31 @@ func serveLogin(c *webContext) {
 	c.JSON(map[string]string{"username": user.Username})
 }
 
+func serveTokenLogin(c *webContext) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		serve500(c)
+		return
+	}
+	if c.Config.App.AccessToken == "" || req.Token != c.Config.App.AccessToken {
+		http.Error(c.Response, "invalid token", http.StatusUnauthorized)
+		return
+	}
+	session, err := sessionStore.Get(c.Request, storeName)
+	if err != nil && session == nil {
+		serve500(c)
+		return
+	}
+	session.Values["access_token"] = c.Config.App.AccessToken
+	if err := session.Save(c.Request, c.Response); err != nil {
+		serve500(c)
+		return
+	}
+	c.JSON(map[string]string{"status": "ok"})
+}
+
 func serveLogout(c *webContext) {
 	session, err := sessionStore.Get(c.Request, storeName)
 	if err != nil && session == nil {

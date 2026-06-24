@@ -852,6 +852,23 @@ func init() {
 			},
 		},
 		{
+			Name:         "TokenLogin",
+			Path:         "/api/token-login",
+			Method:       POST,
+			CSRFRequired: true,
+			NoAuth:       true,
+			Handler:      serveTokenLogin,
+			Description:  "Authenticate with an access token and create a session",
+			JSONSchema: []*JSONSchemaField{
+				{
+					Name:        "token",
+					Type:        "string",
+					Required:    true,
+					Description: "Configured access token",
+				},
+			},
+		},
+		{
 			Name:         "Logout",
 			Path:         "/api/logout",
 			Method:       POST,

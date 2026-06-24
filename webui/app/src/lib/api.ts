@@ -26,6 +26,19 @@ export interface ExtractorInfo {
 let _config: AppConfig | null = null;
 let _csrf: string = '';
 
+function apiPath(path: string): string {
+  return `${base}/api${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function clearLegacyAccessToken(): void {
+  localStorage.removeItem('access-token');
+}
+
+function redirectToAuth(reason: 'auth_required' | 'invalid_token' = 'auth_required'): void {
+  const params = new URLSearchParams({ reason });
+  window.location.href = `${base}/auth?${params.toString()}`;
+}
+
 function getCsrf(): string {
   return _csrf;
 }
@@ -52,14 +65,10 @@ export function resetConfig(): void {
 
 export async function fetchConfig(): Promise<AppConfig> {
   if (_config) return _config;
-  const headers: Record<string, string> = {};
-  const token = localStorage.getItem('access-token');
-  if (token) {
-    headers['X-Access-Token'] = token;
-  }
-  const res = await fetch('api/config', { headers, credentials: 'include' });
+  clearLegacyAccessToken();
+  const res = await fetch(apiPath('/config'), { credentials: 'include' });
   if (res.status === 403) {
-    window.location.href = base + '/auth';
+    redirectToAuth();
     throw new Error('Authentication required');
   }
   const tok = res.headers.get('X-CSRF-Token');
@@ -69,7 +78,7 @@ export async function fetchConfig(): Promise<AppConfig> {
 }
 
 export async function login(username: string, password: string): Promise<{ username: string }> {
-  const res = await fetch('api/login', {
+  const res = await fetch(apiPath('/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -82,11 +91,25 @@ export async function login(username: string, password: string): Promise<{ usern
   return res.json();
 }
 
+export async function loginWithToken(token: string): Promise<void> {
+  const res = await fetch(apiPath('/token-login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    throw new Error('Invalid access token');
+  }
+  clearLegacyAccessToken();
+  _config = null;
+}
+
 export async function logout(): Promise<void> {
   try {
     await apiFetch('/logout', { method: 'POST', redirectOnForbidden: false });
   } finally {
-    localStorage.removeItem('access-token');
+    clearLegacyAccessToken();
     _config = null;
   }
 }
@@ -103,13 +126,10 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}): Prom
   if (_csrf && fetchOptions.method && fetchOptions.method.toUpperCase() !== 'GET') {
     headers['X-CSRF-Token'] = _csrf;
   }
-  const token = localStorage.getItem('access-token');
-  if (token) {
-    headers['X-Access-Token'] = token;
-  }
-  const res = await fetch('api' + url, { ...fetchOptions, headers, credentials: 'include' });
+  clearLegacyAccessToken();
+  const res = await fetch(apiPath(url), { ...fetchOptions, headers, credentials: 'include' });
   if (res.status === 403 && redirectOnForbidden) {
-    window.location.href = base + '/auth';
+    redirectToAuth(getAuthMode() === 'token' ? 'invalid_token' : 'auth_required');
     throw new Error('Authentication required');
   }
   const newTok = res.headers.get('X-CSRF-Token');
