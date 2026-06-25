@@ -6,6 +6,10 @@ export interface AppConfig {
   openResultsOnNewTab: boolean;
   hotkeys: Record<string, string>;
   authMode: 'token' | 'user' | 'none';
+  authenticated: boolean;
+  public: boolean;
+  canWrite: boolean;
+  historyEnabled: boolean;
   username?: string;
   userId?: number;
   oauthOnly?: boolean;
@@ -21,6 +25,19 @@ export interface ExtractorInfo {
 
 let _config: AppConfig | null = null;
 let _csrf: string = '';
+
+function apiPath(path: string): string {
+  return `${base}/api${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function clearLegacyAccessToken(): void {
+  localStorage.removeItem('access-token');
+}
+
+function redirectToAuth(reason: 'auth_required' | 'invalid_token' = 'auth_required'): void {
+  const params = new URLSearchParams({ reason });
+  window.location.href = `${base}/auth?${params.toString()}`;
+}
 
 function getCsrf(): string {
   return _csrf;
@@ -48,14 +65,10 @@ export function resetConfig(): void {
 
 export async function fetchConfig(): Promise<AppConfig> {
   if (_config) return _config;
-  const headers: Record<string, string> = {};
-  const token = localStorage.getItem('access-token');
-  if (token) {
-    headers['X-Access-Token'] = token;
-  }
-  const res = await fetch('api/config', { headers, credentials: 'include' });
+  clearLegacyAccessToken();
+  const res = await fetch(apiPath('/config'), { credentials: 'include' });
   if (res.status === 403) {
-    window.location.href = base + '/auth';
+    redirectToAuth();
     throw new Error('Authentication required');
   }
   const tok = res.headers.get('X-CSRF-Token');
@@ -65,7 +78,7 @@ export async function fetchConfig(): Promise<AppConfig> {
 }
 
 export async function login(username: string, password: string): Promise<{ username: string }> {
-  const res = await fetch('api/login', {
+  const res = await fetch(apiPath('/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -78,25 +91,45 @@ export async function login(username: string, password: string): Promise<{ usern
   return res.json();
 }
 
-export async function logout(): Promise<void> {
-  await apiFetch('/logout', { method: 'POST' });
+export async function loginWithToken(token: string): Promise<void> {
+  const res = await fetch(apiPath('/token-login'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    throw new Error('Invalid access token');
+  }
+  clearLegacyAccessToken();
   _config = null;
 }
 
-export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function logout(): Promise<void> {
+  try {
+    await apiFetch('/logout', { method: 'POST', redirectOnForbidden: false });
+  } finally {
+    clearLegacyAccessToken();
+    _config = null;
+  }
+}
+
+interface ApiFetchOptions extends RequestInit {
+  redirectOnForbidden?: boolean;
+}
+
+export async function apiFetch(url: string, options: ApiFetchOptions = {}): Promise<Response> {
+  const { redirectOnForbidden = true, ...fetchOptions } = options;
   const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
+    ...(fetchOptions.headers as Record<string, string>),
   };
-  if (_csrf && options.method && options.method.toUpperCase() !== 'GET') {
+  if (_csrf && fetchOptions.method && fetchOptions.method.toUpperCase() !== 'GET') {
     headers['X-CSRF-Token'] = _csrf;
   }
-  const token = localStorage.getItem('access-token');
-  if (token) {
-    headers['X-Access-Token'] = token;
-  }
-  const res = await fetch('api' + url, { ...options, headers, credentials: 'include' });
-  if (res.status === 403) {
-    window.location.href = base + '/auth';
+  clearLegacyAccessToken();
+  const res = await fetch(apiPath(url), { ...fetchOptions, headers, credentials: 'include' });
+  if (res.status === 403 && redirectOnForbidden) {
+    redirectToAuth(getAuthMode() === 'token' ? 'invalid_token' : 'auth_required');
     throw new Error('Authentication required');
   }
   const newTok = res.headers.get('X-CSRF-Token');
