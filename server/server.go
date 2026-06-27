@@ -1070,10 +1070,13 @@ func serveAdd(c *webContext) {
 			return
 		}
 		if existingDoc != nil {
-			htmlDiff, textDiff := computeDocumentDiff(existingDoc, d)
-			if htmlDiff != "" || textDiff != "" {
-				if err := model.SaveDocumentVersion(d.URL, d.UserID, htmlDiff, textDiff); err != nil {
-					log.Warn().Err(err).Str("url", d.URL).Msg("failed to save document version")
+			newDoc := indexer.GetByURLAndUser(d.URL, d.UserID)
+			if newDoc != nil {
+				htmlDiff, textDiff := computeDocumentDiff(existingDoc, newDoc)
+				if htmlDiff != "" || textDiff != "" {
+					if err := model.SaveDocumentVersion(newDoc.URL, newDoc.UserID, htmlDiff, textDiff); err != nil {
+						log.Warn().Err(err).Str("url", newDoc.URL).Msg("failed to save document version")
+					}
 				}
 			}
 		}
