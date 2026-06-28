@@ -191,6 +191,53 @@ func TestAddDocumentIncrementsAddCount(t *testing.T) {
 	}
 }
 
+func TestAddDocumentDoesNotIncrementAddCountForExtraDocuments(t *testing.T) {
+	dataDir := t.TempDir()
+	idxCfg := config.CreateDefaultConfig()
+	idxCfg.App.Directory = dataDir
+	err := Init(idxCfg)
+	if err != nil {
+		t.Fatalf("failed to init indexer: %v", err)
+	}
+	defer i.Close()
+
+	parentURL := "https://example.com/parent"
+	extraURL := "https://example.com/extra"
+	for range 2 {
+		err = Add(&document.Document{
+			URL:   parentURL,
+			Title: "Parent",
+			Text:  "Parent document text",
+			ExtraDocuments: []*document.Document{
+				{
+					URL:   extraURL,
+					Title: "Extra",
+					Text:  "Extra document text",
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	parent := GetByURLAndUser(parentURL, 0)
+	if parent == nil {
+		t.Fatal("parent document not found")
+	}
+	if parent.AddCount != 2 {
+		t.Fatalf("parent AddCount = %d, want 2", parent.AddCount)
+	}
+
+	extra := GetByURLAndUser(extraURL, 0)
+	if extra == nil {
+		t.Fatal("extra document not found")
+	}
+	if extra.AddCount != 1 {
+		t.Fatalf("extra AddCount = %d, want 1", extra.AddCount)
+	}
+}
+
 func TestAddDocumentTreatsMissingAddCountAsOne(t *testing.T) {
 	dataDir := t.TempDir()
 	idxCfg := config.CreateDefaultConfig()

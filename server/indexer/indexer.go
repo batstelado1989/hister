@@ -618,13 +618,21 @@ func (i *indexer) TotalByUser(userID uint) uint64 {
 }
 
 func (i *indexer) AddDocument(d *document.Document) error {
+	return i.addDocument(d, true)
+}
+
+func (i *indexer) addDocument(d *document.Document, incrementAddCount bool) error {
 	if !d.IsProcessed() {
 		if err := d.Process(i.langDetector, extractor.Extract); err != nil {
 			return err
 		}
 	}
 	if !d.SkipIndexing {
-		d.AddCount = i.nextAddCount(d)
+		if incrementAddCount {
+			d.AddCount = i.nextAddCount(d)
+		} else if d.AddCount < 1 {
+			d.AddCount = 1
+		}
 		if i.embedder != nil && i.vectorStore != nil {
 			i.embedWg.Go(func() {
 				embedDocumentChunks(i.embedCtx, i, d)
@@ -638,7 +646,7 @@ func (i *indexer) AddDocument(d *document.Document) error {
 		}
 	}
 	for _, extra := range d.ExtraDocuments {
-		if err := i.AddDocument(extra); err != nil {
+		if err := i.addDocument(extra, false); err != nil {
 			log.Warn().Err(err).Str("url", extra.URL).Msg("failed to index extra document")
 		}
 	}
