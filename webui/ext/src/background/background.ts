@@ -318,6 +318,26 @@ async function isUrlPreviouslyIndexed(
   }
 }
 
+async function indexCurrentTab(): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+
+  chrome.tabs.sendMessage(tab.id, { action: 'reindex' }, (response) => {
+    if (chrome.runtime.lastError || response?.status_code !== 201) {
+      setErrorBadge(tab.id!);
+      return;
+    }
+    setPreviouslyIndexedBadge(tab.id!);
+    setTimeout(() => clearBadge(tab.id!), 2500);
+  });
+}
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'index-current-page') {
+    void indexCurrentTab();
+  }
+});
+
 // --- Message handler ---
 
 // TODO check source
