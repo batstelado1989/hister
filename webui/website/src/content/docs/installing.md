@@ -4,7 +4,7 @@ draft: false
 title: 'Obtaining Hister'
 ---
 
-This page documents how to obtain the Hister program, which serves both as a command-line/TUI client and as the server; setting up the browser extensions is covered [later](quickstart#installing-a-browser-extension).
+This page documents how to obtain the Hister program, which serves both as a command-line/TUI client and as the server. For a complete first setup, see the [quickstart guide](quickstart). Setting up the browser extensions is covered in [Installing a Browser Extension](quickstart#installing-a-browser-extension).
 
 If you are using a server already set up by someone else, and you aren't planning on using any of the client's features, then _you do not need to download this program_.
 
