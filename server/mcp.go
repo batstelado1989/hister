@@ -84,10 +84,15 @@ func serveMCP(c *webContext) {
 
 	switch req.Method {
 	case "initialize":
+		semanticSearchEnabled := mcpSemanticSearchEnabled(c)
 		mcpWriteResult(c, req.ID, map[string]any{
 			"protocolVersion": mcpProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "hister", "version": Version},
+			"serverInfo": map[string]any{
+				"name":                  "hister",
+				"version":               Version,
+				"semanticSearchEnabled": semanticSearchEnabled,
+			},
 		})
 
 	case "notifications/initialized", "notifications/cancelled":
@@ -101,7 +106,11 @@ func serveMCP(c *webContext) {
 		mcpWriteResult(c, req.ID, map[string]any{})
 
 	case "tools/list":
-		mcpWriteResult(c, req.ID, map[string]any{"tools": mcpToolList()})
+		semanticSearchEnabled := mcpSemanticSearchEnabled(c)
+		mcpWriteResult(c, req.ID, map[string]any{
+			"tools":                 mcpToolList(semanticSearchEnabled),
+			"semanticSearchEnabled": semanticSearchEnabled,
+		})
 
 	case "tools/call":
 		mcpCallTool(c, req)
@@ -115,12 +124,20 @@ func serveMCP(c *webContext) {
 	}
 }
 
+func mcpSemanticSearchEnabled(c *webContext) bool {
+	return c != nil && c.Config.SemanticSearch.Enable && indexer.SemanticSearchEnabled()
+}
+
 // mcpToolList returns the list of tools this MCP server exposes.
-func mcpToolList() []map[string]any {
+func mcpToolList(semanticSearchEnabled bool) []map[string]any {
+	semanticStatus := "disabled"
+	if semanticSearchEnabled {
+		semanticStatus = "enabled"
+	}
 	return []map[string]any{
 		{
 			"name":        "search",
-			"description": "Search your personal browsing history and indexed documents. Returns titles, URLs, and text snippets for matching pages.",
+			"description": fmt.Sprintf("Search your personal browsing history and indexed documents. Returns titles, URLs, and text snippets for matching pages. Semantic search is currently %s on this Hister instance.", semanticStatus),
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -144,7 +161,7 @@ func mcpToolList() []map[string]any {
 					},
 					"semantic": map[string]any{
 						"type":        "boolean",
-						"description": "Enable AI semantic similarity search alongside keyword matching. Only effective when the server has semantic search configured.",
+						"description": fmt.Sprintf("Enable AI semantic similarity search alongside keyword matching. Current Hister instance semantic search status: %s.", semanticStatus),
 					},
 					"fields": map[string]any{
 						"type": "array",
