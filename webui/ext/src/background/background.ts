@@ -425,7 +425,7 @@ async function disableIndexingForCurrentTab(type: SkipRuleType): Promise<void> {
   }
 }
 
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands?.onCommand?.addListener((command) => {
   if (command === 'index-current-page') {
     void indexCurrentTab();
   } else if (command === 'disable-indexing-current-page') {
