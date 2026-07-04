@@ -15,3 +15,6 @@ tmp/
 
 .test/
 .pre-commit-config.yaml
+
+# workspace
+dev/
