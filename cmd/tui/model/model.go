@@ -10,7 +10,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/asciimoo/hister/client"
@@ -22,7 +21,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorilla/websocket"
 	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
 )
@@ -45,13 +43,6 @@ type Model struct {
 	// Viewport line tracking
 	LineOffsets []int
 	TotalLines  int
-
-	// WebSocket communication
-	Conn    *websocket.Conn
-	WsMu    sync.Mutex
-	WsChan  chan tea.Msg
-	WsDone  chan struct{}
-	WsReady bool
 
 	// Selection and search state
 	SelectedIdx int
@@ -183,8 +174,6 @@ func InitialModel(cfg *config.Config) *Model {
 		SelectedIdx:        -1,
 		DialogReturnTab:    -1,
 		Limit:              ResultsPageSize,
-		WsChan:             make(chan tea.Msg, 10),
-		WsDone:             make(chan struct{}),
 		Styles:             st,
 		ThemeName:          name,
 		ThemePickerMode:    cfg.TUI.ColorScheme,
@@ -390,7 +379,6 @@ func (m *Model) ResetTerminalBg() {
 
 func (m *Model) Close() {
 	m.ResetTerminalBg()
-	close(m.WsDone)
 }
 
 func (m *Model) FocusedRulesInput() *textinput.Model {

@@ -5,11 +5,8 @@
 package handle
 
 import (
-	"time"
-
 	"github.com/asciimoo/hister/cmd/tui/handle/mouse"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/cmd/tui/network"
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/config"
 
@@ -128,6 +125,7 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 
 	case model.ResultsMsg:
 		m.IsSearching = false
+		m.ConnError = nil
 		m.Results = msg.Results
 		if m.SelectedIdx >= m.GetTotalResults() {
 			m.SelectedIdx = m.GetTotalResults() - 1
@@ -136,28 +134,12 @@ func Update(m *model.Model, msg tea.Msg) tea.Cmd {
 			m.SelectedIdx = 0
 		}
 		render.RefreshAndScroll(m)
-		return network.ListenToWebSocket(m.WsChan, m.WsDone)
 
-	case model.WsConnectedMsg:
-		if msg.Conn != nil {
-			m.Conn = msg.Conn
-			m.WsReady = true
-		}
-		return network.ListenToWebSocket(m.WsChan, m.WsDone)
-
-	case model.WsDisconnectedMsg:
-		m.WsReady = false
+	case model.ErrMsg:
 		m.IsSearching = false
 		if msg.Err != nil {
 			m.ConnError = msg.Err
 		}
-		return tea.Tick(2*time.Second, func(_ time.Time) tea.Msg { return model.ReconnectMsg{} })
-
-	case model.ReconnectMsg:
-		return network.ConnectWebSocket(m.Cfg.WebSocketURL(), m.Cfg.BaseURL(""), m.Cfg.App.AccessToken, m.WsChan, m.WsDone)
-
-	case model.ErrMsg:
-		return network.ListenToWebSocket(m.WsChan, m.WsDone)
 	}
 	return nil
 }

@@ -137,10 +137,8 @@ func SwitchTab(m *model.Model, action config.Action) tea.Cmd {
 
 func startSearch(m *model.Model, extra ...tea.Cmd) tea.Cmd {
 	cmds := append([]tea.Cmd{doSearch(m)}, extra...)
-	if m.WsReady {
-		m.IsSearching = true
-		cmds = append(cmds, m.Spinner.Tick)
-	}
+	m.IsSearching = true
+	cmds = append(cmds, m.Spinner.Tick)
 	return tea.Batch(cmds...)
 }
 
@@ -151,7 +149,7 @@ func doSearch(m *model.Model) tea.Cmd {
 			return model.ResultsMsg{Results: nil}
 		}
 	}
-	return network.Search(m.Conn, &m.WsMu, m.WsReady, model.SearchQuery{
+	return network.Search(m.Client, model.SearchQuery{
 		Text:      strings.TrimSpace(q),
 		Highlight: "tui",
 		Limit:     m.Limit + 1,

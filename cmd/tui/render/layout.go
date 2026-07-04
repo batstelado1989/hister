@@ -119,16 +119,11 @@ func Header(m *model.Model) string {
 		tabBar += "  " + m.Styles.Conn.Render("[domain]")
 	}
 
-	cs := m.Styles.Disc.Render("● disconnected")
-	if m.WsReady {
-		cs = m.Styles.Conn.Render("● connected")
-	}
-
 	var right string
-	if m.ConnError != nil && !m.WsReady {
+	if m.ConnError != nil {
 		right = m.Styles.Disc.Render(m.ConnError.Error())
 	} else if m.IsSearching {
-		right = cs + "  " + m.Styles.Spin.Render(m.Spinner.View()+" searching…")
+		right = m.Styles.Spin.Render(m.Spinner.View() + " searching…")
 	} else {
 		countStr := "0 results"
 		if m.Results != nil {
@@ -137,7 +132,7 @@ func Header(m *model.Model) string {
 				countStr += "  " + m.Results.SearchDuration
 			}
 		}
-		right = cs + "  " + m.Styles.Status.Render(countStr)
+		right = m.Styles.Status.Render(countStr)
 	}
 
 	w := max(1, m.Width-1)

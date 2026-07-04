@@ -12,18 +12,11 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: {
+    host: '0.0.0.0',
     proxy: {
       '/api': 'http://127.0.0.1:4433',
       '/static': 'http://127.0.0.1:4433',
-      '/search': {
-        target: 'http://127.0.0.1:4433',
-        ws: true,
-        configure: (proxy) => {
-          proxy.on('proxyReqWs', (proxyReq) => {
-            proxyReq.setHeader('Origin', 'http://127.0.0.1:4433');
-          });
-        },
-      },
+      '/search': 'http://127.0.0.1:4433',
     },
   },
 }));

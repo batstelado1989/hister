@@ -7,7 +7,6 @@ package tui
 import (
 	"github.com/asciimoo/hister/cmd/tui/handle"
 	"github.com/asciimoo/hister/cmd/tui/model"
-	"github.com/asciimoo/hister/cmd/tui/network"
 	"github.com/asciimoo/hister/cmd/tui/render"
 	"github.com/asciimoo/hister/config"
 
@@ -18,11 +17,7 @@ import (
 type app struct{ m *model.Model }
 
 func (a *app) Init() tea.Cmd {
-	return tea.Batch(
-		textinput.Blink,
-		network.ConnectWebSocket(a.m.Cfg.WebSocketURL(), a.m.Cfg.BaseURL(""), a.m.Cfg.App.AccessToken, a.m.WsChan, a.m.WsDone),
-		network.ListenToWebSocket(a.m.WsChan, a.m.WsDone),
-	)
+	return textinput.Blink
 }
 
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

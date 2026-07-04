@@ -5,99 +5,27 @@
 package network
 
 import (
-	"encoding/json"
-	"net/http"
-	"sync"
-
+	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/cmd/tui/model"
 	"github.com/asciimoo/hister/server/indexer"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorilla/websocket"
-	"github.com/rs/zerolog/log"
 )
 
-func ListenToWebSocket(wsChan chan tea.Msg, wsDone chan struct{}) tea.Cmd {
+func Search(c *client.Client, q model.SearchQuery) tea.Cmd {
 	return func() tea.Msg {
-		select {
-		case msg := <-wsChan:
-			return msg
-		case <-wsDone:
-			return nil
-		}
-	}
-}
-
-func ConnectWebSocket(wsURL, origin, token string, wsChan chan tea.Msg, wsDone chan struct{}) tea.Cmd {
-	return func() tea.Msg {
-		header := http.Header{}
-		header.Set("Origin", origin)
-		if token != "" {
-			header.Set("X-Access-Token", token)
-		}
-		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-		if resp != nil && resp.Body != nil {
-			defer func() {
-				if cerr := resp.Body.Close(); cerr != nil {
-					log.Warn().Err(cerr).Msg("failed to close websocket response body")
-				}
-			}()
-		}
+		res, err := c.Search(&indexer.Query{
+			Text:      q.Text,
+			Highlight: q.Highlight,
+			Limit:     q.Limit,
+			Sort:      q.Sort,
+		})
 		if err != nil {
-			return model.WsDisconnectedMsg{Err: err}
+			return model.ErrMsg{Err: err}
 		}
-		go func() {
-			defer func() {
-				if cerr := conn.Close(); cerr != nil {
-					log.Warn().Err(cerr).Msg("failed to close websocket connection")
-				}
-			}()
-			for {
-				select {
-				case <-wsDone:
-					return
-				default:
-					_, data, err := conn.ReadMessage()
-					if err != nil {
-						select {
-						case wsChan <- model.WsDisconnectedMsg{Err: err}:
-						case <-wsDone:
-						}
-						return
-					}
-					var res *indexer.Results
-					if err := json.Unmarshal(data, &res); err != nil {
-						continue
-					}
-					if len(res.Documents) == 0 && len(res.History) == 0 {
-						res = &indexer.Results{}
-					}
-					select {
-					case wsChan <- model.ResultsMsg{Results: res}:
-					case <-wsDone:
-						return
-					}
-				}
-			}
-		}()
-		return model.WsConnectedMsg{Conn: conn}
-	}
-}
-
-func Search(conn *websocket.Conn, wsMu *sync.Mutex, wsReady bool, q model.SearchQuery) tea.Cmd {
-	return func() tea.Msg {
-		if !wsReady || conn == nil {
-			return nil
+		if res == nil || (len(res.Documents) == 0 && len(res.History) == 0) {
+			res = &indexer.Results{}
 		}
-		b, err := json.Marshal(q)
-		if err != nil {
-			return nil
-		}
-		wsMu.Lock()
-		if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
-			log.Warn().Err(err).Msg("failed to write websocket message")
-		}
-		wsMu.Unlock()
-		return nil
+		return model.ResultsMsg{Results: res}
 	}
 }

@@ -32,7 +32,6 @@ import (
 	"github.com/asciimoo/hister/server/types"
 
 	"github.com/gorilla/sessions"
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -85,11 +84,6 @@ func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	return hj.Hijack()
 }
 
-var ws = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 type webContext struct {
 	Request       *http.Request
@@ -694,7 +688,6 @@ func serveConfig(c *webContext) {
 	type configResponse struct {
 		BaseURL             string            `json:"baseUrl"`
 		BasePath            string            `json:"basePath"`
-		WsURL               string            `json:"wsUrl"`
 		Title               string            `json:"title"`
 		Subtitle            string            `json:"subtitle"`
 		SearchURL           string            `json:"searchUrl"`
@@ -734,7 +727,6 @@ func serveConfig(c *webContext) {
 	c.JSON(configResponse{
 		BaseURL:             c.Config.BaseURL(""),
 		BasePath:            c.Config.BasePathPrefix(),
-		WsURL:               c.Config.WebSocketURL(),
 		Title:               c.Config.App.Title,
 		Subtitle:            c.Config.App.Subtitle,
 		SearchURL:           c.Config.App.SearchURL,
@@ -758,50 +750,58 @@ func serveConfig(c *webContext) {
 
 // parseSearchQueryParams parses URL query parameters into an indexer.Query.
 func parseSearchQueryParams(r *http.Request) (*indexer.Query, error) {
-	urlParams := r.URL.Query()
-	query := &indexer.Query{}
-	if rawQuery := urlParams.Get("query"); rawQuery != "" {
-		if err := json.Unmarshal([]byte(rawQuery), query); err != nil {
-			return nil, err
+	p := r.URL.Query()
+	q := &indexer.Query{}
+	q.Text = p.Get("q")
+	if q.Text == "" {
+		q.Text = p.Get("query")
+	}
+	q.Highlight = p.Get("highlight")
+	q.Sort = p.Get("sort")
+	q.PageKey = p.Get("page_key")
+	if v := p.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			q.Limit = n
 		}
 	}
-	if q := urlParams.Get("q"); q != "" {
-		query.Text = q
-	}
-	for param, field := range map[string]*int64{"date_from": &query.DateFrom, "date_to": &query.DateTo} {
-		if v := urlParams.Get(param); v != "" {
-			if t, err := time.Parse("2006-01-02", v); err == nil {
+	for param, field := range map[string]*int64{"date_from": &q.DateFrom, "date_to": &q.DateTo} {
+		if v := p.Get(param); v != "" {
+			if ts, err := strconv.ParseInt(v, 10, 64); err == nil {
+				if param == "date_to" {
+					ts += 24*60*60 - 1
+				}
+				*field = ts
+			} else if t, err := time.Parse("2006-01-02", v); err == nil {
 				ts := t.Unix()
 				if param == "date_to" {
-					// Include the entire end date by advancing to end of day (23:59:59)
 					ts += 24*60*60 - 1
 				}
 				*field = ts
 			}
 		}
 	}
-	if urlParams.Get("include_html") == "1" {
-		query.IncludeHTML = true
+	if v := p.Get("include_html"); v == "1" {
+		q.IncludeHTML = true
 	}
-	if pk := urlParams.Get("page_key"); pk != "" {
-		query.PageKey = pk
+	if v := p.Get("facets"); v == "1" || v == "true" {
+		q.Facets = true
 	}
-	if s := urlParams.Get("sort"); s != "" {
-		query.Sort = s
+	if v := p.Get("semantic"); v != "" {
+		q.SemanticEnabled = v == "1" || v == "true"
 	}
-	if v := urlParams.Get("semantic"); v != "" {
-		query.SemanticEnabled = v == "1" || v == "true"
-	}
-	if v := urlParams.Get("semantic_threshold"); v != "" {
+	if v := p.Get("semantic_threshold"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			query.SemanticThreshold = f
+			q.SemanticThreshold = f
 		}
 	}
-	return query, nil
+	return q, nil
 }
 
 // serveSearchHTTP executes a single search and writes a JSON response.
 func serveSearchHTTP(c *webContext, query *indexer.Query) {
+	if !c.Config.SemanticSearch.Enable {
+		query.SemanticEnabled = false
+	}
 	r, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
 	if err != nil {
 		log.Error().Err(err).Msg("search error")
@@ -819,59 +819,9 @@ func serveSearchHTTP(c *webContext, query *indexer.Query) {
 	}
 }
 
-// serveSearchWebSocket upgrades the connection and serves searches over WebSocket.
-func serveSearchWebSocket(c *webContext) {
-	conn, err := ws.Upgrade(c.Response, c.Request, nil)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to upgrade websocket request")
-		return
-	}
-	defer func() {
-		if err := conn.Close(); err != nil {
-			log.Warn().Err(err).Msg("failed to close websocket connection")
-		}
-	}()
-	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error().Err(err).Msg("failed to read websocket message")
-			}
-			break
-		}
-		var query *indexer.Query
-		if err = json.Unmarshal(msg, &query); err != nil {
-			log.Error().Err(err).Msg("failed to parse query")
-			continue
-		}
-		// Semantic search is only available when the server has it enabled;
-		// otherwise honour the client's per-request flag.
-		if !c.Config.SemanticSearch.Enable {
-			query.SemanticEnabled = false
-		}
-		res, err := doSearch(query, c.Config, c.effectiveRules(), c.UserID)
-		if err != nil {
-			log.Error().Err(err).Msg("search error")
-			continue
-		}
-		jr, err := json.Marshal(res)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to marshal indexer results")
-			continue
-		}
-		if err := conn.WriteMessage(websocket.TextMessage, jr); err != nil {
-			log.Error().Err(err).Msg("failed to write websocket message")
-			break
-		}
-	}
-}
 
 func serveSearch(c *webContext) {
 	origin := c.Request.Header.Get("Origin")
-	// `?format=json` (or `Accept: application/json`) opts the caller into a
-	// pure JSON response and skips the same-host Origin check, so CLI tools
-	// and ad-hoc HTTP clients can hit the search endpoint without spoofing
-	// a hister:// Origin header.
 	jsonFormat := c.Request.URL.Query().Get("format") == "json" ||
 		c.Request.Header.Get("Accept") == "application/json"
 	if !jsonFormat && !c.Config.IsSameHost(origin) {
@@ -884,16 +834,12 @@ func serveSearch(c *webContext) {
 		c.Response.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if jsonFormat && query.Text == "" {
+	if query.Text == "" {
 		c.Response.WriteHeader(http.StatusBadRequest)
-		_, _ = c.Response.Write([]byte(`{"error":"text query required for format=json"}`))
+		_, _ = c.Response.Write([]byte(`{"error":"text query required"}`))
 		return
 	}
-	if query.Text != "" {
-		serveSearchHTTP(c, query)
-		return
-	}
-	serveSearchWebSocket(c)
+	serveSearchHTTP(c, query)
 }
 
 func doSearch(query *indexer.Query, cfg *config.Config, rules *config.Rules, userID uint) (*indexer.Results, error) {

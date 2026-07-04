@@ -7,8 +7,6 @@ package model
 import (
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"github.com/asciimoo/hister/client"
 	"github.com/asciimoo/hister/config"
 	"github.com/asciimoo/hister/server/indexer"
@@ -46,9 +44,6 @@ type SearchQuery struct {
 type (
 	ResultsMsg          struct{ Results *indexer.Results }
 	ErrMsg              struct{ Err error }
-	WsConnectedMsg      struct{ Conn *websocket.Conn }
-	WsDisconnectedMsg   struct{ Err error }
-	ReconnectMsg        struct{}
 	HintClearMsg        struct{}
 	SettingsErrClearMsg struct{}
 	HistoryFetchedMsg   struct{ Items []HistoryItem }

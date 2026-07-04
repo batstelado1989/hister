@@ -4,7 +4,6 @@ interface HotkeyConfig {
 }
 
 interface SearchConfig {
-  wsUrl: string;
   csrf: string;
   searchUrl: string;
   openResultsOnNewTab: boolean;
@@ -188,112 +187,6 @@ export function scrollTo(el: Element): void {
   el.scrollIntoView({ block: 'nearest' });
 }
 
-interface WebSocketManagerCallbacks {
-  onOpen: () => void;
-  onMessage: (event: MessageEvent) => void;
-  onClose: () => void;
-  onError: (event: Event) => void;
-}
-
-export class WebSocketManager {
-  private ws: WebSocket | null = null;
-  private wsUrl: string;
-  private callbacks: WebSocketManagerCallbacks;
-  private reconnectTimer: number | null = null;
-  private debounceTimer: number | null = null;
-  private inFlight: boolean = false;
-  private pendingMessage: string | null = null;
-  private readonly debounceMs: number;
-
-  constructor(wsUrl: string, callbacks: WebSocketManagerCallbacks, debounceMs: number = 100) {
-    this.wsUrl = wsUrl;
-    this.callbacks = callbacks;
-    this.debounceMs = debounceMs;
-  }
-
-  connect(): void {
-    this.ws = new WebSocket(this.wsUrl);
-
-    this.ws.onopen = () => {
-      this.callbacks.onOpen();
-    };
-
-    this.ws.onmessage = (event) => {
-      this.inFlight = false;
-      if (this.pendingMessage !== null) {
-        const msg = this.pendingMessage;
-        this.pendingMessage = null;
-        this.dispatch(msg);
-      }
-      this.callbacks.onMessage(event);
-    };
-
-    this.ws.onclose = () => {
-      this.inFlight = false;
-      this.pendingMessage = null;
-      this.callbacks.onClose();
-      this.scheduleReconnect();
-    };
-
-    this.ws.onerror = (event) => {
-      this.callbacks.onError(event);
-    };
-  }
-
-  send(message: string): void {
-    if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
-    }
-    this.debounceTimer = window.setTimeout(() => {
-      this.debounceTimer = null;
-      if (this.inFlight) {
-        this.pendingMessage = message;
-      } else {
-        this.dispatch(message);
-      }
-    }, this.debounceMs);
-  }
-
-  // sendImmediate sends without debouncing. Use for load-more requests so that
-  // a pending debounced query (from the user typing) is not cancelled.
-  sendImmediate(message: string): void {
-    if (this.inFlight) {
-      this.pendingMessage = message;
-    } else {
-      this.dispatch(message);
-    }
-  }
-
-  private dispatch(message: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.inFlight = true;
-      this.ws.send(message);
-    }
-  }
-
-  close(): void {
-    if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    this.ws?.close();
-  }
-
-  private scheduleReconnect(): void {
-    this.reconnectTimer = window.setTimeout(() => {
-      this.connect();
-    }, 1000);
-  }
-
-  get isOpen(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-}
-
 interface APIRequestParams {
   method?: string;
   headers?: Record<string, string>;
@@ -404,21 +297,22 @@ interface QueryParams {
   facets?: boolean;
 }
 
-export function buildSearchQuery(text: string, opts: SearchQueryOptions = {}): QueryParams {
+export function buildSearchParams(text: string, opts: SearchQueryOptions = {}): URLSearchParams {
   const { sort, dateFrom, dateTo, semantic, pageKey, limit, facets } = opts;
-  return {
-    text,
-    highlight: 'HTML',
-    ...(sort && { sort }),
-    ...(dateFrom && {
-      date_from: Math.floor(new Date(dateFrom).getTime() / 1000),
-    }),
-    ...(dateTo && { date_to: Math.floor(new Date(dateTo).getTime() / 1000) }),
-    ...(semantic && { semantic_enabled: semantic.enabled, semantic_threshold: semantic.threshold }),
-    ...(limit && { limit }),
-    ...(pageKey && { page_key: pageKey }),
-    ...(facets && { facets: true }),
-  };
+  const p = new URLSearchParams();
+  p.set('q', text);
+  p.set('highlight', 'HTML');
+  if (sort) p.set('sort', sort);
+  if (dateFrom) p.set('date_from', String(Math.floor(new Date(dateFrom).getTime() / 1000)));
+  if (dateTo) p.set('date_to', String(Math.floor(new Date(dateTo).getTime() / 1000)));
+  if (semantic) {
+    p.set('semantic', semantic.enabled ? '1' : '0');
+    p.set('semantic_threshold', String(semantic.threshold));
+  }
+  if (limit) p.set('limit', String(limit));
+  if (pageKey) p.set('page_key', pageKey);
+  if (facets) p.set('facets', '1');
+  return p;
 }
 
 export function parseSearchResults(data: string): SearchResults {

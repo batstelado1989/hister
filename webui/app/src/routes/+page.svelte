@@ -10,7 +10,6 @@
   import { page } from '$app/stores';
   import { base } from '$app/paths';
   import {
-    WebSocketManager,
     KeyHandler,
     getSearchUrl,
     exportJSON,
@@ -20,8 +19,7 @@
     formatRelativeTime,
     scrollTo,
     escapeHTML,
-    buildSearchQuery,
-    parseSearchResults,
+    buildSearchParams,
     openURL,
   } from '$lib/search';
   import { fetchConfig, apiFetch, getUserId } from '$lib/api';
@@ -74,7 +72,6 @@
   import type { HistoryItem } from '$lib/types';
 
   interface Config {
-    wsUrl: string;
     title: string;
     subtitle: string;
     searchUrl: string;
@@ -114,7 +111,6 @@
   const sortValues = new Set<string>(sortOptions.map((option) => option.value));
 
   let config: Config = $state({
-    wsUrl: '',
     title: 'Hister',
     subtitle: 'Your own search engine',
     searchUrl: '',
@@ -129,13 +125,11 @@
     historyEnabled: true,
   });
 
-  let wsManager: WebSocketManager | undefined;
   let keyHandler: KeyHandler | undefined;
   let inputEl: HTMLInputElement | null = $state(null);
 
   let query = $state('');
   let autocomplete = $state('');
-  let connected = $state(false);
   let lastResults = $state<SearchResults | null>(null);
   let accumulatedDocs = $state<SearchResult[]>([]);
   let pageKey = $state('');
@@ -604,45 +598,60 @@
     }
   }
 
-  function connect() {
-    wsManager = new WebSocketManager(config.wsUrl, {
-      onOpen: () => {
-        connected = true;
-        if (query) sendQuery(query);
-      },
-      onMessage: renderResults,
-      onClose: () => {
-        connected = false;
-      },
-      onError: () => {
-        connected = false;
-      },
-    });
-    wsManager.connect();
-  }
+  let searchController: AbortController | null = null;
+  let loadMoreController: AbortController | null = null;
+  let debounceTimer: number | null = null;
 
-  function searchQueryOpts(pageKey = ''): SearchQueryOptions {
-    return {
-      sort: currentSort,
-      dateFrom,
-      dateTo,
-      semantic: { enabled: semanticOn && config.semanticEnabled, threshold: similarityThreshold },
-      pageKey,
-      limit: RESULTS_PER_PAGE,
-    };
+  async function executeSearch(q: string, pk: string) {
+    if (pk === '') {
+      searchController?.abort();
+      loadMoreController?.abort();
+      searchController = new AbortController();
+    } else {
+      loadMoreController?.abort();
+      loadMoreController = new AbortController();
+    }
+    const signal = pk === '' ? searchController!.signal : loadMoreController!.signal;
+    const params = buildSearchParams(q, searchQueryOpts(pk));
+    try {
+      const resp = await fetch(`search?${params}`, {
+        headers: { Accept: 'application/json' },
+        signal,
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      renderResults(data, pk !== '');
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+    }
   }
 
   function sendQuery(q: string) {
     loadingMoreForQuery = '';
     pageKey = '';
     hasMore = false;
-    wsManager?.send(JSON.stringify(buildSearchQuery(q, searchQueryOpts())));
+    if (debounceTimer !== null) clearTimeout(debounceTimer);
+    debounceTimer = window.setTimeout(() => {
+      debounceTimer = null;
+      if (q) executeSearch(q, '');
+    }, 100);
   }
 
   function loadMoreResults() {
     if (!pageKey || !hasMore || loadingMoreForQuery) return;
     loadingMoreForQuery = query;
-    wsManager?.sendImmediate(JSON.stringify(buildSearchQuery(query, searchQueryOpts(pageKey))));
+    executeSearch(query, pageKey);
+  }
+
+  function searchQueryOpts(pk = ''): SearchQueryOptions {
+    return {
+      sort: currentSort,
+      dateFrom,
+      dateTo,
+      semantic: { enabled: semanticOn && config.semanticEnabled, threshold: similarityThreshold },
+      pageKey: pk,
+      limit: RESULTS_PER_PAGE,
+    };
   }
 
   const skipUrl = { value: false };
@@ -712,7 +721,7 @@
     dateTo = params.get('date_to') || '';
     currentSort = parseSortParam(params.get('sort'));
     lastPushedEmpty = !query;
-    if (query && connected) sendQuery(query);
+    if (query) sendQuery(query);
     if (!query) {
       autocomplete = '';
       lastResults = null;
@@ -722,9 +731,7 @@
     });
   }
 
-  function renderResults(event: MessageEvent) {
-    const res = parseSearchResults(event.data);
-    const isLoadMore = loadingMoreForQuery !== '' && loadingMoreForQuery === query;
+  function renderResults(res: SearchResults, isLoadMore: boolean) {
     loadingMoreForQuery = '';
     if (isLoadMore) {
       accumulatedDocs = [...accumulatedDocs, ...(res.documents ?? [])];
@@ -1272,7 +1279,7 @@
     })();
   });
   $effect(() => {
-    if (query && connected) {
+    if (query) {
       sendQuery(query);
       localStorage.setItem('lastQuery', query);
     }
@@ -1294,11 +1301,11 @@
   // Persist and react to semantic setting changes.
   $effect(() => {
     localStorage.setItem('hister-semantic-on', String(semanticOn));
-    if (query && connected) sendQuery(query);
+    if (query) sendQuery(query);
   });
   $effect(() => {
     localStorage.setItem('hister-semantic-threshold', String(similarityThreshold));
-    if (query && connected) sendQuery(query);
+    if (query) sendQuery(query);
   });
   $effect(() => {
     localStorage.setItem('hister-semantic-weight', String(semanticWeight));
@@ -1362,10 +1369,7 @@
   onMount(() => {
     (async () => {
       const appConfig = await fetchConfig();
-      const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = new URL(appConfig.wsUrl);
       config = {
-        wsUrl: `${wsProto}//${location.host}${wsUrl.pathname}`,
         title: appConfig.title ?? 'Hister',
         subtitle: appConfig.subtitle ?? 'Your own search engine',
         searchUrl: appConfig.searchUrl,
@@ -1395,7 +1399,6 @@
         currentTip = choices[Math.floor(Math.random() * choices.length)];
       }
       inputEl?.focus();
-      connect();
       keyHandler = new KeyHandler(config.hotkeys, hotkeyActions);
       loadHomeStats();
     })();
@@ -1408,7 +1411,6 @@
     };
     mq.addEventListener('change', mqHandler);
     return () => {
-      wsManager?.close();
       cleanupAnimations();
       mq.removeEventListener('change', mqHandler);
     };
@@ -1615,26 +1617,6 @@
             <X class="size-4" />
           </button>
         {/if}
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              <button
-                type="button"
-                class="text-text-brand-muted hover:bg-muted-surface flex h-8 items-center gap-2 px-2 text-xs font-semibold transition-colors md:h-9 md:px-3"
-                aria-label="Server {connected ? 'connected' : 'disconnected'}"
-              >
-                <span class="h-2 w-2 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"
-                ></span>
-                <span class="hidden md:inline">{connected ? 'Online' : 'Offline'}</span>
-              </button>
-            </Tooltip.Trigger>
-            <Tooltip.Portal>
-              <Tooltip.Content>
-                Server: {connected ? 'Connected' : 'Disconnected'}
-              </Tooltip.Content>
-            </Tooltip.Portal>
-          </Tooltip.Root>
-        </Tooltip.Provider>
       </div>
     </div>
     {#if autocomplete && autocomplete !== query}
@@ -2393,20 +2375,6 @@
         placeholder="Search..."
         class="font-inter text-text-brand placeholder:text-text-brand-muted h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-lg font-medium shadow-none focus-visible:ring-0 md:text-2xl"
       />
-      <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root>
-          <Tooltip.Trigger class="flex h-8 w-8 items-center justify-center">
-            <div
-              class="h-2.5 w-2.5 shrink-0 {connected ? 'bg-hister-lime' : 'bg-hister-rose'}"
-            ></div>
-          </Tooltip.Trigger>
-          <Tooltip.Portal>
-            <Tooltip.Content>
-              Server: {connected ? 'Connected' : 'Disconnected'}
-            </Tooltip.Content>
-          </Tooltip.Portal>
-        </Tooltip.Root>
-      </Tooltip.Provider>
     </div>
 
     <div
