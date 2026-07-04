@@ -1,8 +1,10 @@
 # Hister
 
-**Your own search engine**
+This is an opinionated fork of Hister, which is a general purpose web search engine providing automatic full-text indexing for visited websites.
 
-Hister is a general purpose web search engine providing automatic full-text indexing for visited websites.
+## Opinionated
+
+I don't take requests or design for anyone else's needs. Features, fixes, and removals reflect my own needs and preferences. Per the [LICENSE](LICENSE), you are free to take any changes as you see fit.
 
 ## Features
 
@@ -14,8 +16,6 @@ Hister is a general purpose web search engine providing automatic full-text inde
 - **Multi-user support**: Host it for your local community
 
 ## Check out our [Documentation](https://hister.org/docs) for more details
-
-## [Support](https://hister.org/support) the development
 
 ## Development
 
@@ -32,19 +32,7 @@ npm run serve:app
 
 This starts a Vite dev server (with HMR) and the Go backend (with auto-rebuild via [air](https://github.com/air-verse/air)) concurrently.
 
-## Community
-
-Join us on IRCNet: #hister or on [Discord](https://discord.gg/beEyuHxRSs)
-
-## Contributing
-
-Check the [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
-
-Bugs or suggestions? Visit the [issue tracker](https://github.com/asciimoo/hister/issues).
-
-Security related issue? See our [SECURITY.md](SECURITY.md)
-
-## Sponsors
+## Sponsors of OG Hister
 
 ## License
 
