@@ -33,7 +33,6 @@
     FacetsResult,
   } from '$lib/search';
   import { RESULTS_PER_PAGE } from '$lib/search';
-  import { animate } from 'animejs';
   import { Input } from '@hister/components/ui/input';
   import { Button } from '@hister/components/ui/button';
   import { Badge } from '@hister/components/ui/badge';
@@ -203,8 +202,6 @@
   let statsRowEl: HTMLElement | undefined = $state();
   let kbdEl: HTMLElement | null = $state(null);
   let underlineEl: HTMLElement | undefined = $state();
-
-  let animationHandles: any[] = [];
 
   type TipPart =
     | { type: 'text'; value: string }
@@ -1190,84 +1187,11 @@
 
   let statsLoaded = $state(false);
 
-  function addAnimation(target: HTMLElement | null | undefined, options: any) {
-    if (!target) {
-      return;
-    }
-    animationHandles.push(animate(target, options));
-  }
-
-  function startHeroAnimations() {
-    cleanupAnimations();
-
-    addAnimation(heroTitleEl, {
-      backgroundPosition: ['0% 50%', '100% 50%'],
-      ease: 'inOutSine',
-      duration: 6000,
-      loop: true,
-      alternate: true,
-    });
-
-    addAnimation(kbdEl, {
-      translateY: [0, 3, 0],
-      duration: 400,
-      ease: 'inOutSine',
-      loop: true,
-      loopDelay: 10000,
-    });
-
-    addAnimation(underlineEl, {
-      scaleX: [0, 1],
-      duration: 800,
-      ease: 'outCubic',
-      delay: 300,
-    });
-
-    addAnimation(searchBoxEl, {
-      translateY: [8, 0],
-      opacity: [0, 1],
-      duration: 420,
-      ease: 'outCubic',
-    });
-  }
-
-  function animateCounters() {
-    const counterObj = { h: displayHistoryCount, r: displayRulesCount, a: displayAliasesCount };
-    animationHandles.push(
-      animate(counterObj, {
-        h: historyCount,
-        r: rulesCount,
-        a: aliasesCount,
-        duration: 800,
-        ease: 'outCubic',
-        onRender: () => {
-          displayHistoryCount = Math.round(counterObj.h);
-          displayRulesCount = Math.round(counterObj.r);
-          displayAliasesCount = Math.round(counterObj.a);
-        },
-      }),
-    );
-  }
-
-  function cleanupAnimations() {
-    for (const h of animationHandles) {
-      try {
-        h.revert();
-      } catch {}
-    }
-    animationHandles = [];
-  }
-
-  $effect(() => {
-    if (!isSearching) {
-      tick().then(() => startHeroAnimations());
-    }
-    return () => cleanupAnimations();
-  });
-
   $effect(() => {
     if (statsLoaded && !isSearching) {
-      tick().then(() => animateCounters());
+      displayHistoryCount = historyCount;
+      displayRulesCount = rulesCount;
+      displayAliasesCount = aliasesCount;
     }
   });
 
@@ -1411,7 +1335,6 @@
     };
     mq.addEventListener('change', mqHandler);
     return () => {
-      cleanupAnimations();
       mq.removeEventListener('change', mqHandler);
     };
   });
@@ -2337,8 +2260,7 @@
   >
     <h1
       bind:this={heroTitleEl}
-      class="font-outfit bg-clip-text text-5xl leading-none font-black tracking-[8px] text-transparent uppercase select-none md:text-9xl"
-      style="background-image: linear-gradient(90deg, var(--hister-indigo), var(--hister-coral), var(--hister-teal), var(--hister-indigo)); background-size: 300% 100%; background-position: 0% 50%;"
+      class="font-outfit bg-clip-text text-5xl leading-none font-black tracking-[8px] text-white uppercase select-none md:text-9xl"
     >
       {config.title}
     </h1>
@@ -2348,11 +2270,6 @@
         {@html config.subtitle}
       </p>
     {/if}
-    <div
-      bind:this={underlineEl}
-      class="h-[3px] w-48"
-      style="background: linear-gradient(90deg, var(--hister-indigo), var(--hister-coral), var(--hister-teal)); transform: scaleX(0); transform-origin: left;"
-    ></div>
 
     <div
       bind:this={searchBoxEl}

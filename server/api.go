@@ -79,7 +79,7 @@ func init() {
 			Method:      GET,
 			Public:      true,
 			Handler:     serveSearch,
-			Description: "Search endpoint. With a query parameter it returns JSON results directly. Without one it upgrades to a WebSocket connection that accepts repeated JSON Query messages and streams back results.",
+			Description: "Search endpoint.",
 			Args: []*EndpointArg{
 				{
 					Name:        "q",
