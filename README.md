@@ -12,7 +12,6 @@ Hister is a general purpose web search engine providing automatic full-text inde
 - **Local file indexing**: Index your local knowledge base
 - **Crawler**: Use a (headless) browser or a traditional crawler to extend your index fast
 - **Multi-user support**: Host it for your local community
-- **AI enhanced**: Enable optional semantic search or connect your agents via MCP
 
 ## Check out our [Documentation](https://hister.org/docs) for more details
 

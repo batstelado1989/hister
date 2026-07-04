@@ -893,68 +893,6 @@ func init() {
 			Description:  "Regenerate the API access token for the current user",
 		},
 		{
-			Name:        "MCP",
-			Path:        "/mcp",
-			Method:      POST,
-			Public:      true,
-			Handler:     serveMCP,
-			Description: "Model Context Protocol endpoint (JSON-RPC 2.0 / Streamable HTTP). Exposes search, preview, and history tools to AI assistants.",
-			JSONSchema: []*JSONSchemaField{
-				{
-					Name:        "jsonrpc",
-					Type:        "string",
-					Required:    true,
-					Description: "JSON-RPC version; must be \"2.0\"",
-				},
-				{
-					Name:        "id",
-					Type:        "string | number | null",
-					Required:    false,
-					Description: "Request identifier; omit for notifications",
-				},
-				{
-					Name:        "method",
-					Type:        "string",
-					Required:    true,
-					Description: "RPC method name (e.g. \"tools/call\", \"initialize\", \"tools/list\")",
-				},
-				{
-					Name:        "params",
-					Type:        "object",
-					Required:    false,
-					Description: "Method parameters; shape depends on the method",
-					Fields: []*JSONSchemaField{
-						{
-							Name:        "name",
-							Type:        "string",
-							Required:    true,
-							Description: "Tool name; must be \"search\" for tools/call",
-						},
-						{
-							Name:        "arguments",
-							Type:        "object",
-							Required:    false,
-							Description: "Tool arguments for tools/call",
-							Fields: []*JSONSchemaField{
-								{
-									Name:        "query",
-									Type:        "string",
-									Required:    true,
-									Description: "Search query string",
-								},
-								{
-									Name:        "limit",
-									Type:        "int",
-									Required:    false,
-									Description: "Maximum number of results (default 10)",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
 			Name:        "OAuthRedirect",
 			Path:        "/api/oauth",
 			Method:      GET,

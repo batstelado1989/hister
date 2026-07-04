@@ -36,7 +36,7 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// Version is set by the main package before Listen() is called so that MCP
+// Version is set by the main package before Listen() is called so that (snip)
 // and other server responses can expose the running binary version.
 var Version = "unknown"
 
@@ -83,7 +83,6 @@ func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 	}
 	return hj.Hijack()
 }
-
 
 type webContext struct {
 	Request       *http.Request
@@ -818,7 +817,6 @@ func serveSearchHTTP(c *webContext, query *indexer.Query) {
 		log.Warn().Err(err).Msg("failed to write search response")
 	}
 }
-
 
 func serveSearch(c *webContext) {
 	origin := c.Request.Header.Get("Origin")
