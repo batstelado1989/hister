@@ -2,9 +2,7 @@
 
 This is an opinionated fork of Hister, which is a general purpose web search engine providing automatic full-text indexing for visited websites.
 
-## Opinionated
-
-I don't take requests or design for anyone else's needs. Features, fixes, and removals reflect my own needs and preferences. Per the [LICENSE](LICENSE), you are free to take any changes as you see fit.
+I don't take requests for anyone else's needs or wants. Features, fixes, and removals reflect my own needs and wants. Per the [LICENSE](LICENSE), you are free to take any changes as you see fit.
 
 ## Features
 
