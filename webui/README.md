@@ -1,15 +1,11 @@
 ## Structure
 
 `app/` contains all the resources required to build the hister web UI
-`website/` contains all the static site resources required to build hister.org and the documentation
-`components/` contains all the reusable components used by either the `app/` or the `website/`
+`components/` contains all the reusable components used by either the `app/`
 
 ## Build
 
 execute `./manage.sh build` to build the `app/`
-execute `npm run build -w @hister/website` to build the `website/`
-
-live preview available for the `website/` with: `npm run preview -w @hister/website`
 
 ## Add new component from ShadCN
 

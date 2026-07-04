@@ -9,7 +9,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY webui/app/package.json webui/app/
 COPY webui/components/package.json webui/components/
-COPY webui/website/package.json webui/website/
 
 RUN npm ci --workspaces
 

@@ -9,13 +9,6 @@
     { label: 'Help', href: 'help', color: 'var(--hister-indigo)' },
     { label: 'Extractors', href: 'extractors', color: 'var(--hister-cyan)' },
     { label: 'About', href: 'about', color: 'var(--hister-teal)' },
-    { label: 'API', href: 'api-docs', color: 'var(--hister-coral)' },
-    {
-      label: 'GitHub',
-      href: 'https://github.com/asciimoo/hister/',
-      color: 'var(--hister-amber)',
-      external: true,
-    },
   ];
 
   const iconBtn =

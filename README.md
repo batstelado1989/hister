@@ -18,10 +18,6 @@ Hister is a general purpose web search engine providing automatic full-text inde
 
 ## [Support](https://hister.org/support) the development
 
-![hister screenshot](webui/website/src/lib/assets/screenshot.png)
-
-![hister screencast](webui/website/src/lib/assets/demo.gif)
-
 ## Development
 
 **Requirements**: latest Go and NPM
@@ -50,8 +46,6 @@ Bugs or suggestions? Visit the [issue tracker](https://github.com/asciimoo/histe
 Security related issue? See our [SECURITY.md](SECURITY.md)
 
 ## Sponsors
-
-[![Uruky](webui/website/static/uruky.svg)](https://uruky.com/)
 
 ## License
 

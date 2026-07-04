@@ -2053,15 +2053,6 @@
                       </div>
                     </DropdownMenu.Content>
                   </DropdownMenu.Root>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="font-inter text-text-brand-muted hover:text-hister-coral gap-1 text-xs no-underline"
-                    href={getSearchUrl(config.searchUrl, query)}
-                  >
-                    <ExternalLink class="size-3" />
-                    Web
-                  </Button>
                 </div>
               </div>
 

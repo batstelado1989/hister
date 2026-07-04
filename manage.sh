@@ -19,24 +19,23 @@ help() {
 Commands
 ========
 help                 - Display help
- 
+
 Dependencies
 ------------------
 install_js_deps      - Install or install frontend dependencies (required only for development)
- 
+
 Tests
 -----
 run_unit_tests       - Run unit tests
- 
+
  Build
  -----
  build                - Build main hister application
  build_addon          - Build addon
  build_addon_artifact - Build addon artifacts to distribute to addon stores
- build_website        - Build website
- 
+
  ========
- 
+
  Execute 'go run hister.go' or 'go build && ./hister' for application related actions
  "
 	[ -z "$1" ] && exit 0 || exit 1
@@ -69,10 +68,6 @@ build_addon() {
     npm run build -w @hister/ext
 }
 
-build_website() {
-    check_npm
-    npm run build -w @hister/website
-}
 
 build_addon_artifact() {
     build_addon
