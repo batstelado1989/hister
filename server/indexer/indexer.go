@@ -276,6 +276,8 @@ var (
 	i *indexer
 	// allFields      []string       = []string{"url", "title", "text", "favicon", "html", "domain", "added", "type", "user_id"}
 	allFields      []string       = []string{"*"}
+	quotedTermRe                  = regexp.MustCompile(`"([^"]+)"`)
+	markTagRe                     = regexp.MustCompile(`</?mark>`)
 	ErrEmptyFilter                = errors.New("delete query must not be empty")
 	bleveConfig    map[string]any = map[string]any{
 		"bolt_timeout": "2s",
@@ -1105,6 +1107,58 @@ func DeleteByQuery(text string, userID *uint, onDelete func(url string, userID u
 	return count, nil
 }
 
+func extractQuotedTerms(text string) []string {
+	ms := quotedTermRe.FindAllStringSubmatch(text, -1)
+	terms := make([]string, 0, len(ms))
+	for _, m := range ms {
+		if len(m) > 1 && strings.TrimSpace(m[1]) != "" {
+			terms = append(terms, strings.TrimSpace(m[1]))
+		}
+	}
+	return terms
+}
+
+func extractPlainTerms(text string) []string {
+	withoutQuotes := quotedTermRe.ReplaceAllString(text, " ")
+	words := strings.Fields(withoutQuotes)
+	terms := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.TrimLeft(w, "-+")
+		if w != "" {
+			terms = append(terms, w)
+		}
+	}
+	return terms
+}
+
+func isExactMatch(fields map[string]interface{}, terms []string) bool {
+	for _, term := range terms {
+		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(term) + `\b`)
+		if title, ok := fields["title"].(string); ok && re.MatchString(title) {
+			return true
+		}
+		if text, ok := fields["text"].(string); ok && re.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+func fixHighlight(snippet string, terms []string) string {
+	raw := markTagRe.ReplaceAllString(snippet, "")
+	result := raw
+	for _, term := range terms {
+		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(term) + `\b`)
+		result = re.ReplaceAllStringFunc(result, func(m string) string {
+			return "<mark>" + m + "</mark>"
+		})
+	}
+	if result == raw {
+		return snippet
+	}
+	return result
+}
+
 func Search(cfg *config.Config, q *Query) (*Results, error) {
 	q.cfg = cfg
 	req := bleve.NewSearchRequest(q.create())
@@ -1162,6 +1216,31 @@ func Search(cfg *config.Config, q *Query) (*Results, error) {
 	matches := make([]*document.Document, len(res.Hits))
 	for j, v := range res.Hits {
 		matches[j] = i.resFromHit(v, q.IncludeText, q.IncludeHTML)
+	}
+	if quotedTerms := extractQuotedTerms(q.Text); len(quotedTerms) > 0 {
+		// keep only literal match.
+		filtered := make([]*document.Document, 0, len(matches))
+		for j, hit := range res.Hits {
+			if isExactMatch(hit.Fields, quotedTerms) {
+				if q.Highlight == "HTML" {
+					matches[j].Text = fixHighlight(matches[j].Text, quotedTerms)
+				}
+				filtered = append(filtered, matches[j])
+			}
+		}
+		matches = filtered
+	} else if plainTerms := extractPlainTerms(q.Text); len(plainTerms) > 0 {
+		// float literal match.
+		exact := make([]*document.Document, 0, len(matches))
+		other := make([]*document.Document, 0, len(matches))
+		for j, hit := range res.Hits {
+			if isExactMatch(hit.Fields, plainTerms) {
+				exact = append(exact, matches[j])
+			} else {
+				other = append(other, matches[j])
+			}
+		}
+		matches = append(exact, other...)
 	}
 	r := &Results{
 		Total:     res.Total,
