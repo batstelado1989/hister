@@ -634,14 +634,20 @@ func Add(d *document.Document) error {
 }
 
 func (i *indexer) Total() uint64 {
-	q := query.NewMatchAllQuery()
-	req := bleve.NewSearchRequest(q)
-	req.Size = 1
-	res, err := i.idx.Search(req)
+	// q := query.NewMatchAllQuery()
+	// req := bleve.NewSearchRequest(q)
+	// req.Size = 1
+	// res, err := i.idx.Search(req)
+	// if err != nil {
+	// 	return 0
+	// }
+	// return res.Total
+	res, err := bleve.Index.DocCount(i.idx)
 	if err != nil {
 		return 0
 	}
-	return res.Total
+
+	return res
 }
 
 func (i *indexer) TotalByUser(userID uint) uint64 {
